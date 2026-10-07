@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS customer_admins(
  created_at TEXT,
  updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS second_order_unlocks(
+ customer_id INTEGER PRIMARY KEY,
+ paid_amount REAL DEFAULT 0,
+ utr TEXT,
+ proof TEXT,
+ status TEXT DEFAULT 'pending',
+ verified_by INTEGER,
+ created_at TEXT,
+ updated_at TEXT
+);
 """
 
 async def connect():
@@ -210,6 +220,33 @@ async def payment_qr_for(customer_id, order_id=None):
         if a and a["active"] and a["qr_enabled"] and a["qr_value"]:
             return a["qr_value"], aid
     return await setting("default_qr",""), aid or 0
+
+async def second_order_fee():
+    return float(await setting("second_order_fee","30"))
+
+async def has_second_order_unlock(customer_id):
+    db=await connect()
+    cur=await db.execute("SELECT * FROM second_order_unlocks WHERE customer_id=? AND status='verified'",(customer_id,))
+    row=await cur.fetchone(); await db.close(); return row
+
+async def create_second_order_payment(customer_id, amount, utr="", proof=""):
+    db=await connect()
+    await db.execute(
+      "INSERT INTO second_order_unlocks(customer_id,paid_amount,utr,proof,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?) "
+      "ON CONFLICT(customer_id) DO UPDATE SET paid_amount=excluded.paid_amount,utr=excluded.utr,proof=excluded.proof,status='pending',verified_by=NULL,updated_at=excluded.updated_at",
+      (customer_id,amount,utr,proof,"pending",now(),now()))
+    await db.commit(); await db.close()
+
+async def verify_second_order_unlock(customer_id, admin_id, ok):
+    db=await connect()
+    await db.execute("UPDATE second_order_unlocks SET status=?,verified_by=?,updated_at=? WHERE customer_id=? AND status='pending'",
+                     ("verified" if ok else "rejected",admin_id,now(),customer_id))
+    await db.commit(); await db.close()
+
+async def consume_second_order_unlock(customer_id):
+    db=await connect()
+    await db.execute("DELETE FROM second_order_unlocks WHERE customer_id=? AND status='verified'",(customer_id,))
+    await db.commit(); await db.close()
 
 async def has_unfinished_order(customer_id):
     db=await connect()
