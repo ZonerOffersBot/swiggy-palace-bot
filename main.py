@@ -232,6 +232,33 @@ async def admin_callback(q,context,data):
         kb=[[InlineKeyboardButton(f"🆔 {o['id']}",callback_data=f"orderview:{o['id']}")] for o in rows]
         kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_new"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
         await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
+    elif data.startswith("orderview:"):
+        oid=data.split(":",1)[1]
+        o=await db.get_order(oid)
+        if not o:
+            await q.message.reply_text("❌ Order not found.")
+            return
+        if uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid:
+            await q.message.reply_text("🔒 Ye order kisi aur Admin ko assigned hai.")
+            return
+        customer=await db.get_user(int(o["customer_id"]))
+        assigned=await db.get_admin(int(o["assigned_admin"])) if o["assigned_admin"] else None
+        assigned_name=(assigned["display_name"] or str(o["assigned_admin"])) if assigned else "Unassigned"
+        msg=(f"📦 <b>ORDER DETAILS</b>\n\n"
+             f"🆔 <code>{o['id']}</code>\n"
+             f"👤 Customer: <code>{o['customer_id']}</code>\n"
+             f"🪪 Customer ID: <code>{customer['public_id'] if customer and customer['public_id'] else '-'}</code>\n"
+             f"👨‍💼 Assigned Admin: <b>{assigned_name}</b>\n"
+             f"📌 Status: <b>{o['status']}</b>\n"
+             f"🍔 Swiggy Amount: ₹{o['swiggy_amount']:.2f}\n"
+             f"🏰 Palace Charge: ₹{o['palace_charge']:.2f}\n"
+             f"⭐ Priority Fee: ₹{o['priority_fee']:.2f}\n"
+             f"💳 Total: ₹{o['total']:.2f}\n"
+             f"💰 Payment: <b>{o['payment_status']}</b>\n"
+             f"🧾 Swiggy Order ID: {o['swiggy_order_id'] or '-'}\n\n"
+             f"📍 Address: {o['address_link'] or '-'}\n"
+             f"🛒 Cart: {o['cart_link'] or '-'}")
+        await q.message.reply_text(msg,parse_mode="HTML",reply_markup=order_actions(oid))
     elif data=="a_pay":
         dbx=await db.connect(); cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' ORDER BY o.created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
         if not rows: await q.message.reply_text("💳 No pending payment verification."); return
@@ -335,6 +362,15 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif action=="swiggyid":
         await db.update_order(oid,swiggy_order_id=text); state.pop(uid,None); await update.message.reply_text(f"🧾 {oid} Swiggy Order ID saved: {text}")
 
+async def qr_photo_handler(update,context):
+    if update.effective_user.id!=OWNER_ID:
+        return
+    caption=(update.message.caption or "").strip()
+    if caption.lower().startswith("/setqr"):
+        fid=update.message.photo[-1].file_id
+        await db.set_setting("default_qr",fid)
+        await update.message.reply_text("✅ Default Palace QR image saved successfully.")
+
 async def photo_handler(update,context):
     uid=update.effective_user.id; s=state.get(uid)
     if not s: return
@@ -389,7 +425,15 @@ async def set_cmd(update,context,key,label):
 async def setcharge(update,context): await set_cmd(update,context,"palace_charge","Palace charge")
 async def setpriority(update,context): await set_cmd(update,context,"priority_fee","Priority fee")
 async def setbusiness(update,context): await set_cmd(update,context,"business_open","Business status")
-async def setqr(update,context): await set_cmd(update,context,"default_qr","Default QR")
+async def setqr(update,context):
+    if update.effective_user.id!=OWNER_ID:
+        return
+    if not context.args:
+        await update.message.reply_text("🔳 Usage: /setqr <Telegram file_id or image URL>")
+        return
+    value=" ".join(context.args).strip()
+    await db.set_setting("default_qr",value)
+    await update.message.reply_text("✅ Default Palace QR saved. Ye QR payment/charge screens par fallback ke roop me use hoga.")
 
 async def feedback_cmd(update,context):
     if not context.args:return
@@ -433,6 +477,7 @@ async def main():
     app.add_handler(CommandHandler("feedback",feedback_cmd))
     app.add_handler(CommandHandler("skip",lambda u,c: u.message.reply_text("⏭️ Skipped.")))
     app.add_handler(CallbackQueryHandler(callbacks))
+    app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,qr_photo_handler))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     app.add_error_handler(error)
