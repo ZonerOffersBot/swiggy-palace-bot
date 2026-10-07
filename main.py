@@ -14,7 +14,13 @@ log=logging.getLogger("swiggy-palace")
 # Per-user short-lived input state. Durable business state is kept in SQLite.
 state={}
 
-def is_admin(uid): return uid in ADMIN_IDS
+async def is_admin(uid):
+    if uid==OWNER_ID or uid in ADMIN_IDS:
+        return True
+    try:
+        return await db.is_db_admin(uid)
+    except Exception:
+        return False
 
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user
@@ -68,7 +74,7 @@ async def removeadmin_cmd(update,context):
     await update.message.reply_text(f"🗑️ Admin removed: {aid}")
 
 async def admin_cmd(update,context):
-    if not is_admin(update.effective_user.id): return
+    if not await is_admin(update.effective_user.id): return
     await update.message.reply_text("👑 <b>Swiggy Palace Admin Panel</b>",parse_mode="HTML",reply_markup=admin_menu())
 
 async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -216,7 +222,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 async def admin_callback(q,context,data):
     uid=q.from_user.id
-    if not is_admin(uid): return
+    if not await is_admin(uid): return
     if data=="a_stats":
         s=await db.stats(); await q.message.reply_text(f"📊 <b>Palace Stats</b>\n👥 Customers: {s['customers']}\n📦 Orders: {s['orders']}\n🏁 Completed: {s['completed']}\n⏳ Active: {s['active']}\n🍔 Swiggy Value: ₹{s['swiggy']:.2f}\n💰 Palace Charges: ₹{s['charges']:.2f}\n↩️ Refunds: ₹{s['refunds']:.2f}",parse_mode="HTML")
     elif data=="a_new":
@@ -294,7 +300,7 @@ async def approve_payment(q,oid,ok):
     await q.message.reply_text(("✅ Payment approved." if ok else "❌ Payment rejected.")+f" {oid}")
 
 async def admin_priority_callback(q,data):
-    if not is_admin(q.from_user.id): return
+    if not await is_admin(q.from_user.id): return
     uid=int(data.split(":")[1]); dbx=await db.connect()
     ok=data.startswith("prioapprove:")
     await dbx.execute("UPDATE priority_payments SET status=?,verified_by=? WHERE customer_id=? AND status='pending'",("verified" if ok else "rejected",q.from_user.id,uid))
