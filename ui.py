@@ -1,5 +1,11 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+def role_menu():
+    return InlineKeyboardMarkup([
+      [InlineKeyboardButton("🛒 Become a Customer",callback_data="become_customer")],
+      [InlineKeyboardButton("🏪 Become a Seller",callback_data="become_seller")]
+    ])
+
 def main_menu():
     return InlineKeyboardMarkup([
       [InlineKeyboardButton("🛒 Place New Order",callback_data="new_order")],
