@@ -193,6 +193,37 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif data=="help_support" or data=="ticket":
         state[uid]={"action":"ticket_subject"}
         await q.message.reply_text("🆘 <b>Help & Support</b>\n\nApni query/problem ek message me likho.\nAapki query Ticket ID aur unique ID ke saath Owner ko milegi.",parse_mode="HTML")
+    elif data.startswith("orderview:") or data.startswith("userview:"):
+        await admin_callback(q,context,data)
+    elif data=="qr_upload":
+        if uid!=OWNER_ID:
+            return
+        state[uid]={"action":"qr_upload"}
+        await q.message.reply_text(
+          "📤 <b>UPLOAD PALACE QR</b>\n\n"
+          "Ab apna QR code <b>photo</b> ke roop me bhejo.\n"
+          "Photo milte hi Default Palace QR save ho jayega.\n\n"
+          "💡 QR image ke saath caption dena zaroori nahi hai.",
+          parse_mode="HTML")
+    elif data.startswith("qr_admin:"):
+        if uid!=OWNER_ID:
+            return
+        aid=int(data.split(":",1)[1])
+        a=await db.get_admin(aid)
+        if not a:
+            await q.message.reply_text("❌ Admin not found.")
+            return
+        state[uid]={"action":"qr_admin_upload","admin_id":aid}
+        await q.message.reply_text(
+          f"📤 <b>UPLOAD QR — {a['display_name'] or aid}</b>\n\n"
+          "Ab is Admin ka QR code photo bhejo.\n"
+          "Payment screens par is assigned Admin ka QR use hoga.",
+          parse_mode="HTML")
+    elif data=="qr_remove_default":
+        if uid!=OWNER_ID:
+            return
+        await db.set_setting("default_qr","")
+        await q.message.reply_text("🗑️ Default Palace QR removed.")
     elif data.startswith("pay:"):
         oid=data.split(":",1)[1]; o=await db.get_order(oid)
         if not o or o["customer_id"]!=uid: return
@@ -318,7 +349,22 @@ async def admin_callback(q,context,data):
         c=await db.setting("palace_charge","30"); enabled=await db.setting("palace_charge_enabled","1"); pf=await db.setting("priority_fee","49")
         await q.message.reply_text(f"💰 Charge ON: {enabled}\n🏰 Palace charge: ₹{c}\n⭐ Priority fee: ₹{pf}\n\nUse /setcharge amount and /setpriority amount.")
     elif data=="a_qr":
-        qr=await db.setting("default_qr",""); await q.message.reply_text("🔳 Default Palace QR: "+(qr or "Not configured")+"\nUse /setqr <Telegram file_id or URL>.")
+        if uid!=OWNER_ID:
+            await q.message.reply_text("🔒 Sirf Super Admin Owner QR settings manage kar sakta hai.")
+            return
+        qr=await db.setting("default_qr","")
+        rows=await db.list_admins()
+        kb=[
+          [InlineKeyboardButton("📤 Upload Default QR Photo",callback_data="qr_upload")],
+          [InlineKeyboardButton("🗑️ Remove Default QR",callback_data="qr_remove_default")]
+        ]
+        for a in rows:
+            kb.append([InlineKeyboardButton(f"🔳 Set QR — {a['display_name'] or a['id']}",callback_data=f"qr_admin:{a['id']}")])
+        await q.message.reply_text(
+          "🔳 <b>QR SETTINGS</b>\n\n"
+          f"Default QR: {'✅ Configured' if qr else '❌ Not configured'}\n\n"
+          "📤 Default QR photo upload karein, ya kisi Admin ke liye alag QR set karein.",
+          parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_settings":
         await q.message.reply_text("⚙️ Settings\n/setcharge 30\n/setpriority 49\n/setbusiness on|off\n/setqr VALUE")
     elif data.startswith("approvepay:"):
@@ -391,12 +437,21 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         await db.update_order(oid,swiggy_order_id=text); state.pop(uid,None); await update.message.reply_text(f"🧾 {oid} Swiggy Order ID saved: {text}")
 
 async def qr_photo_handler(update,context):
-    if update.effective_user.id!=OWNER_ID:
+    uid=update.effective_user.id
+    if uid!=OWNER_ID:
         return
+    s=state.get(uid,{})
     caption=(update.message.caption or "").strip()
-    if caption.lower().startswith("/setqr"):
-        fid=update.message.photo[-1].file_id
+    fid=update.message.photo[-1].file_id
+    if s.get("action")=="qr_admin_upload":
+        aid=int(s["admin_id"])
+        await db.set_admin_qr(aid,fid,True)
+        state.pop(uid,None)
+        await update.message.reply_text(f"✅ Admin QR saved successfully for Admin {aid}.")
+        return
+    if s.get("action")=="qr_upload" or caption.lower().startswith("/setqr"):
         await db.set_setting("default_qr",fid)
+        state.pop(uid,None)
         await update.message.reply_text("✅ Default Palace QR image saved successfully.")
 
 async def photo_handler(update,context):
