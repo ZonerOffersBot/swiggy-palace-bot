@@ -1,4 +1,4 @@
-import asyncio, logging, os
+import asyncio, logging, os, json
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
@@ -151,20 +151,23 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
           parse_mode="HTML",reply_markup=main_menu())
         return
     if data=="become_seller":
+        state[uid]={"action":"seller_form","step":0,"data":{}}
         await q.message.edit_text(
-          "🏪 <b>BECOME A SELLER</b>\n\n"
-          "Swiggy Palace Seller banne ke fayde:\n\n"
-          "🤝 Palace ke saath directly kaam karein\n"
-          "🛡️ Safe & reliable managed process\n"
-          "📱 Customer/order management tools ek hi jagah\n"
-          "🏰 Approval ke baad <b>Mini Admin</b> access\n"
-          "💯 <b>Bot-side commission: ₹0</b>\n"
-          "🚫 Idhar-udhar alag service dhoondhne ki zarurat nahi\n"
-          "🔔 Seller request direct Super Admin ko approval ke liye jayegi.\n\n"
-          "⚠️ Seller approval ke baad hi Mini Admin access activate hoga.",
+          "🏪 <b>SELLER APPLICATION FORM</b>\n\n"
+          "Jo details available hain woh fill karein. Jo detail nahi deni ho, <b>Skip</b> karein.\n\n"
+          "1️⃣ <b>Full Name</b> bhejein:",
           parse_mode="HTML",
-          reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back",callback_data="start_roles")]])
-        )
+          reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏭️ Skip",callback_data="seller_skip")],[InlineKeyboardButton("⬅️ Back",callback_data="start_roles")]]))
+        return
+    if data=="seller_skip":
+        s=state.get(uid)
+        if not s or s.get("action")!="seller_form": return
+        fields=["full_name","phone","city","experience","upi","business"]
+        prompts=["2️⃣ <b>Mobile Number</b> bhejein:","3️⃣ <b>City</b> bhejein:","4️⃣ <b>Experience</b> bhejein:","5️⃣ <b>UPI ID</b> bhejein:","6️⃣ <b>Business / Work Details</b> bhejein:"]
+        step=s["step"]
+        if step<len(fields): s["data"][fields[step]]="Skipped"; s["step"]=step+1
+        if s["step"]>=len(fields): await submit_seller_application(q,context)
+        else: await q.message.reply_text(prompts[s["step"]-1],parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏭️ Skip",callback_data="seller_skip")]]))
         return
     if data=="start_roles":
         await q.message.edit_text(
@@ -309,6 +312,21 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
         await admin_priority_callback(q,data)
 
+async def submit_seller_application(target,context):
+    uid=target.from_user.id
+    s=state.get(uid,{})
+    data=s.get("data",{})
+    await db.set_setting("seller_"+str(uid),json.dumps(data))
+    pid=await db.assign_public_id(uid,"seller")
+    msg=(f"🏪 <b>NEW SELLER APPLICATION</b>\n\n🪪 Seller ID: <code>{pid}</code>\n🆔 Telegram ID: <code>{uid}</code>\n"
+         f"👤 Name: {data.get('full_name','-')}\n📱 Phone: {data.get('phone','-')}\n📍 City: {data.get('city','-')}\n"
+         f"💼 Experience: {data.get('experience','-')}\n💳 UPI: {data.get('upi','-')}\n🏪 Business: {data.get('business','-')}")
+    kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve Seller",callback_data=f"seller_approve:{uid}"),InlineKeyboardButton("❌ Reject",callback_data=f"seller_reject:{uid}")]])
+    try: await context.bot.send_message(OWNER_ID,msg,parse_mode="HTML",reply_markup=kb)
+    except Exception as e: log.warning("Seller notification failed: %s",e)
+    state.pop(uid,None)
+    await target.message.reply_text("✅ <b>Application submitted!</b>\n\n👑 Super Admin approval ke baad Mini Admin access milega.",parse_mode="HTML",reply_markup=role_menu())
+
 async def broadcast_callback(q,context):
     uid=q.from_user.id
     if uid!=OWNER_ID:
@@ -324,6 +342,15 @@ async def cancel_cmd(update,context):
 async def admin_callback(q,context,data):
     uid=q.from_user.id
     if not await is_admin(uid): return
+    if data.startswith("seller_approve:") or data.startswith("seller_reject:"):
+        if uid!=OWNER_ID: return
+        sid=int(data.split(":")[1]); ok=data.startswith("seller_approve:")
+        await db.set_setting("seller_status_"+str(sid),"approved" if ok else "rejected")
+        if ok: await db.add_admin(sid,"mini_admin","Seller")
+        try: await context.bot.send_message(sid,"🎉 <b>Seller Approved!</b>\n🏰 Mini Admin access enabled." if ok else "❌ Seller application rejected.",parse_mode="HTML")
+        except: pass
+        await q.message.reply_text("✅ Seller approved; Mini Admin enabled." if ok else "❌ Seller rejected.")
+        return
     if data=="a_broadcast":\n        await broadcast_callback(q,context)\n    elif data=="a_stats":
         s=await db.stats(); await q.message.reply_text(f"📊 <b>Palace Stats</b>\n👥 Customers: {s['customers']}\n📦 Orders: {s['orders']}\n🏁 Completed: {s['completed']}\n⏳ Active: {s['active']}\n🍔 Swiggy Value: ₹{s['swiggy']:.2f}\n💰 Palace Charges: ₹{s['charges']:.2f}\n↩️ Refunds: ₹{s['refunds']:.2f}",parse_mode="HTML")
     elif data=="a_new":
@@ -482,6 +509,23 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
     if not s: return
     action=s["action"]; oid=s.get("oid")
+    if action=="seller_form":
+        fields=["full_name","phone","city","experience","upi","business"]
+        prompts=["2️⃣ <b>Mobile Number</b> bhejein:","3️⃣ <b>City</b> bhejein:","4️⃣ <b>Experience</b> bhejein:","5️⃣ <b>UPI ID</b> bhejein:","6️⃣ <b>Business / Work Details</b> bhejein:"]
+        step=s.get("step",0)
+        s["data"][fields[step]]=text.strip(); s["step"]=step+1
+        if s["step"]>=len(fields): await submit_seller_application(update,context)
+        else: await update.message.reply_text(prompts[s["step"]-1],parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏭️ Skip",callback_data="seller_skip")]]))
+        return
+    if action=="feedback_review":
+        oid=s.get("oid"); rating=int(s.get("rating",0)); review=text.strip(); o=await db.get_order(oid)
+        if o and o["customer_id"]==uid and o["status"]=="completed":
+            dbx=await db.connect()
+            await dbx.execute("UPDATE users SET rating_sum=rating_sum+?,rating_count=rating_count+1 WHERE id=?",(rating,uid))
+            await dbx.execute("UPDATE orders SET notes=COALESCE(notes,'') || ?,updated_at=? WHERE id=?",("\nfeedback:"+str(rating)+":"+review,db.now(),oid))
+            await dbx.commit(); await dbx.close(); state.pop(uid,None)
+            await update.message.reply_text("🙏 <b>Thank you!</b>\n⭐ Rating & feedback save ho gaya.",parse_mode="HTML")
+        return
     if action=="broadcast":
         if uid!=OWNER_ID:
             state.pop(uid,None); return
