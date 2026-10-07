@@ -2,7 +2,7 @@ import asyncio, logging, os
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from config import BOT_TOKEN, ADMIN_IDS, OWNER_ID, PORT
 import db
@@ -282,6 +282,8 @@ async def health(request): return PlainTextResponse("OK")
 async def main():
     if not BOT_TOKEN: raise RuntimeError("BOT_TOKEN is missing")
     await db.init_db()
+    await db.ensure_bootstrap_admins(ADMIN_IDS)
+    log.info("Database initialized; starting Telegram polling")
     app=Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("admin",admin_cmd))
@@ -304,6 +306,7 @@ async def main():
         ])
     await app.initialize(); await post_init(app); await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
+    log.info("Telegram polling started successfully")
     from uvicorn import Config, Server
     web=Starlette(routes=[Route("/health",health)])
     server=Server(Config(web,host="0.0.0.0",port=PORT,log_level="info"))
