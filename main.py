@@ -43,6 +43,30 @@ async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
       parse_mode="HTML",reply_markup=role_menu())
 
 
+async def addadmin_cmd(update,context):
+    if update.effective_user.id!=OWNER_ID:
+        return
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("➕ Usage: /addadmin TELEGRAM_ID ROLE Name")
+        return
+    aid=int(context.args[0])
+    role=context.args[1] if len(context.args)>1 else "order_admin"
+    name=" ".join(context.args[2:]) if len(context.args)>2 else ""
+    await db.add_admin(aid,role,name)
+    await update.message.reply_text(f"✅ Admin added\\n🆔 {aid}\\n👤 Role: {role}\\n📛 Name: {name or '-'}")
+
+async def removeadmin_cmd(update,context):
+    if update.effective_user.id!=OWNER_ID:
+        return
+    if not context.args or not context.args[0].isdigit():
+        return
+    aid=int(context.args[0])
+    if aid==OWNER_ID:
+        await update.message.reply_text("❌ Owner ko remove nahi kiya ja sakta.")
+        return
+    await db.remove_admin(int(context.args[0]))
+    await update.message.reply_text(f"🗑️ Admin removed: {aid}")
+
 async def admin_cmd(update,context):
     if not is_admin(update.effective_user.id): return
     await update.message.reply_text("👑 <b>Swiggy Palace Admin Panel</b>",parse_mode="HTML",reply_markup=admin_menu())
@@ -392,6 +416,8 @@ async def main():
     app=Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("admin",admin_cmd))
+    app.add_handler(CommandHandler("addadmin",addadmin_cmd))
+    app.add_handler(CommandHandler("removeadmin",removeadmin_cmd))
     app.add_handler(CommandHandler("price",price_cmd))
     app.add_handler(CommandHandler("swiggyid",swiggyid_cmd))
     app.add_handler(CommandHandler("setcharge",setcharge))
