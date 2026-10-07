@@ -1,0 +1,5 @@
+python-telegram-bot==21.9
+aiosqlite==0.20.0
+python-dotenv==1.0.1
+uvicorn==0.34.0
+starlette==0.45.3
