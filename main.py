@@ -136,7 +136,19 @@ async def admin_callback(q,context,data):
         kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_active"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
         await q.message.reply_text("📦 <b>ONGOING ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_admins":
-        await q.message.reply_text("👨‍💼 Admin management is available through environment OWNER_ID/ADMIN_IDS in this first production build. Database role controls are ready for extension.")
+        if uid!=OWNER_ID:
+            await q.message.reply_text("🔒 Sirf Super Admin Owner hi Admin management kar sakta hai.")
+            return
+        rows=await db.list_admins()
+        lines=["👨‍💼 <b>ADMIN MANAGEMENT</b>",""]
+        if rows:
+            for a in rows:
+                name=f" — {a['display_name']}" if a['display_name'] else ""
+                lines.append(f"🆔 <code>{a['id']}</code> • {a['role']}{name}")
+        else:
+            lines.append("No admins configured.")
+        lines += ["","➕ <b>Add Admin</b> ke liye use karein:","<code>/addadmin TELEGRAM_ID ROLE Name</code>","Example: <code>/addadmin 123456789 order_admin Rahul</code>","", "🗑️ Remove: <code>/removeadmin TELEGRAM_ID</code>"]
+        await q.message.reply_text("\n".join(lines),parse_mode="HTML")
     elif data=="a_charges":
         c=await db.setting("palace_charge","30"); enabled=await db.setting("palace_charge_enabled","1"); pf=await db.setting("priority_fee","49")
         await q.message.reply_text(f"💰 Charge ON: {enabled}\n🏰 Palace charge: ₹{c}\n⭐ Priority fee: ₹{pf}\n\nUse /setcharge amount and /setpriority amount.")
