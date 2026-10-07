@@ -164,6 +164,11 @@ async def remove_admin(aid):
 async def set_admin_qr(aid,value,enabled=True):
     db=await connect(); await db.execute("UPDATE admins SET qr_value=?,qr_enabled=?,updated_at=? WHERE id=?",(value,1 if enabled else 0,now(),aid)); await db.commit(); await db.close()
 
+async def has_unfinished_order(customer_id):
+    db=await connect()
+    cur=await db.execute("SELECT id,status FROM orders WHERE customer_id=? AND status NOT IN ('completed','cancelled','refund_completed') ORDER BY created_at DESC LIMIT 1",(customer_id,))
+    row=await cur.fetchone(); await db.close(); return row
+
 async def create_order(customer_id):
     db=await connect()
     cur=await db.execute("SELECT id FROM orders ORDER BY rowid DESC LIMIT 1")
