@@ -22,6 +22,57 @@ async def is_admin(uid):
     except Exception:
         return False
 
+FORCE_JOIN_CHANNEL="@Swiggypalace"
+
+async def force_join_required(uid):
+    dbx=await db.connect()
+    try:
+        cur=await dbx.execute("SELECT value FROM settings WHERE key='force_join_channels'")
+        row=await cur.fetchone()
+        channels=(row["value"].split(",") if row and row["value"] else [FORCE_JOIN_CHANNEL])
+        cur=await dbx.execute("SELECT value FROM settings WHERE key='force_join_verified'")
+        verified=await cur.fetchone()
+        ids=set((verified["value"] if verified else "").split(","))
+        if str(uid) in ids:
+            return False
+        for ch in channels:
+            ch=ch.strip()
+            if not ch: continue
+            try:
+                m=await app_global.bot.get_chat_member(ch,uid)
+                if m.status in ("creator","administrator","member") or (m.status=="restricted" and getattr(m,"is_member",False)):
+                    continue
+                return True
+            except Exception:
+                return True
+        return False
+    finally:
+        await dbx.close()
+
+async def mark_force_join_verified(uid):
+    dbx=await db.connect()
+    cur=await dbx.execute("SELECT value FROM settings WHERE key='force_join_verified'")
+    row=await cur.fetchone()
+    ids=[x for x in (row["value"] if row else "").split(",") if x and x!=str(uid)]
+    ids.append(str(uid))
+    await dbx.execute("INSERT INTO settings(key,value) VALUES('force_join_verified,',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(",".join(ids),))
+    # Correct the key if SQLite inserted the typo-safe statement above.
+    await dbx.execute("INSERT INTO settings(key,value) VALUES('force_join_verified',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(",".join(ids),))
+    await dbx.commit(); await dbx.close()
+
+async def show_force_join(target):
+    kb=InlineKeyboardMarkup([
+      [InlineKeyboardButton("📢 Join Swiggy Palace",url="https://t.me/Swiggypalace")],
+      [InlineKeyboardButton("✅ I Joined",callback_data="force_join_check")]
+    ])
+    await target.reply_text(
+      "🏰 <b>SWIGGY PALACE</b> 👑\n\n"
+      "🔒 <b>Join Required</b>\n\n"
+      "Bot use karne se pehle hamare official channel ko join karein:\n"
+      "📢 @Swiggypalace\n\n"
+      "1️⃣ Channel join karein\n2️⃣ <b>✅ I Joined</b> dabayein\n3️⃣ Verification ke baad menu open hoga.",
+      parse_mode="HTML",reply_markup=kb)
+
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user
     await db.upsert_user(u)
@@ -79,6 +130,13 @@ async def admin_cmd(update,context):
 
 async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
+    if data=="force_join_check":
+        if await force_join_required(uid):
+            await q.answer("❌ Pehle channel join karein.",show_alert=True)
+            return
+        await mark_force_join_verified(uid)
+        await q.message.edit_text("✅ <b>Verification Complete!</b>\n\n🏰 Welcome to Swiggy Palace.\n👇 Ab apna role choose karein.",parse_mode="HTML",reply_markup=role_menu())
+        return
     if data=="become_customer":
         await db.assign_public_id(uid,"customer")
         await q.message.edit_text(
@@ -546,7 +604,7 @@ async def main():
     await db.init_db()
     await db.ensure_bootstrap_admins(ADMIN_IDS)
     log.info("Database initialized; starting Telegram polling")
-    app=Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
+    app=Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()\n    global app_global\n    app_global=app
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("admin",admin_cmd))
     app.add_handler(CommandHandler("addadmin",addadmin_cmd))
