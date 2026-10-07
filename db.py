@@ -60,6 +60,13 @@ CREATE TABLE IF NOT EXISTS audit_log(
  id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER, action TEXT,
  order_id TEXT, details TEXT, created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS customer_admins(
+ customer_id INTEGER PRIMARY KEY,
+ admin_id INTEGER NOT NULL,
+ active INTEGER DEFAULT 1,
+ created_at TEXT,
+ updated_at TEXT
+);
 """
 
 async def connect():
@@ -164,18 +171,59 @@ async def remove_admin(aid):
 async def set_admin_qr(aid,value,enabled=True):
     db=await connect(); await db.execute("UPDATE admins SET qr_value=?,qr_enabled=?,updated_at=? WHERE id=?",(value,1 if enabled else 0,now(),aid)); await db.commit(); await db.close()
 
+async def get_customer_admin(customer_id):
+    db=await connect()
+    cur=await db.execute("SELECT admin_id FROM customer_admins WHERE customer_id=? AND active=1",(customer_id,))
+    row=await cur.fetchone(); await db.close()
+    return int(row["admin_id"]) if row else None
+
+async def assign_customer_admin(customer_id):
+    existing=await get_customer_admin(customer_id)
+    if existing:
+        return existing
+    db=await connect()
+    cur=await db.execute("SELECT id FROM admins WHERE active=1 ORDER BY id LIMIT 1")
+    row=await cur.fetchone()
+    aid=int(row["id"]) if row else 0
+    if not aid:
+        await db.close()
+        return 0
+    await db.execute(
+      "INSERT INTO customer_admins(customer_id,admin_id,active,created_at,updated_at) VALUES(?,?,?,?,?) "
+      "ON CONFLICT(customer_id) DO UPDATE SET admin_id=excluded.admin_id,active=1,updated_at=excluded.updated_at",
+      (customer_id,aid,1,now(),now()))
+    await db.commit(); await db.close()
+    return aid
+
+async def set_order_admin(oid, admin_id):
+    await update_order(oid, assigned_admin=admin_id)
+    return admin_id
+
+async def payment_qr_for(customer_id, order_id=None):
+    aid=await get_customer_admin(customer_id)
+    if order_id:
+        o=await get_order(order_id)
+        if o and o["assigned_admin"]:
+            aid=int(o["assigned_admin"])
+    if aid:
+        a=await get_admin(aid)
+        if a and a["active"] and a["qr_enabled"] and a["qr_value"]:
+            return a["qr_value"], aid
+    return await setting("default_qr",""), aid or 0
+
 async def has_unfinished_order(customer_id):
     db=await connect()
     cur=await db.execute("SELECT id,status FROM orders WHERE customer_id=? AND status NOT IN ('completed','cancelled','refund_completed') ORDER BY created_at DESC LIMIT 1",(customer_id,))
     row=await cur.fetchone(); await db.close(); return row
 
 async def create_order(customer_id):
+    assigned=await assign_customer_admin(customer_id)
     db=await connect()
     cur=await db.execute("SELECT id FROM orders ORDER BY rowid DESC LIMIT 1")
     row=await cur.fetchone()
     n=1000 if not row else int(str(row["id"]).split("-")[-1])+1
     oid=f"SP-{n}"
-    await db.execute("INSERT INTO orders(id,customer_id,created_at,updated_at) VALUES(?,?,?,?)",(oid,customer_id,now(),now()))
+    await db.execute("INSERT INTO orders(id,customer_id,assigned_admin,created_at,updated_at) VALUES(?,?,?,?,?)",(oid,customer_id,assigned or None,now(),now()))
     await db.commit(); await db.close()
     return oid
 
