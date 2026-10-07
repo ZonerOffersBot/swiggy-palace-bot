@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from config import BOT_TOKEN, ADMIN_IDS, OWNER_ID, PORT
 import db
-from ui import main_menu, admin_menu, order_actions
+from ui import main_menu, admin_menu, order_actions, role_menu
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log=logging.getLogger("swiggy-palace")
@@ -21,10 +21,27 @@ async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await db.upsert_user(u)
     state.pop(u.id,None)
     await update.message.reply_text(
-      f"🏰 <b>Swiggy Palace</b> 👑\n\n🍔 Manual Swiggy Ordering Service\n\n"
-      "📍 Send your Swiggy address link\n🛒 Send your cart link\n📸 Send cart screenshot\n"
-      "💳 Pay after final price verification\n👨‍💼 Order is manually placed by Palace Admin",
-      parse_mode="HTML",reply_markup=main_menu())
+      "🏰 <b>SWIGGY PALACE</b> 👑\n\n"
+      "🍔 <b>Manual Swiggy Ordering Service</b>\n\n"
+      "Safe & reliable manual ordering support.\n"
+      "Aap apni need ke hisaab se Customer ya Seller choose karein.\n\n"
+      "🛒 <b>Become a Customer</b>\n"
+      "💸 Low-price food ordering support\n"
+      "📍 Address + cart share karein\n"
+      "💳 Final price verification ke baad payment\n"
+      "👨‍💼 Order manually Palace Admin place karega\n"
+      "📦 Order status aur Swiggy Order ID updates\n\n"
+      "🏪 <b>Become a Seller</b>\n"
+      "🤝 Swiggy Palace ke saath seller ke roop me judhein\n"
+      "🏰 Seller approval ke baad Mini Admin access\n"
+      "🛡️ Safe & reliable process\n"
+      "📱 Customers/orders ko manage karne ke liye Palace ke andar hi tools\n"
+      "💯 Bot-side commission: <b>₹0</b>\n"
+      "🚫 Idhar-udhar alag service dhoondhne ki zarurat nahi\n"
+      "🔔 Seller request direct Super Admin approval ke liye jayegi.\n\n"
+      "👇 <b>Choose your role:</b>",
+      parse_mode="HTML",reply_markup=role_menu())
+
 
 async def admin_cmd(update,context):
     if not is_admin(update.effective_user.id): return
@@ -32,6 +49,39 @@ async def admin_cmd(update,context):
 
 async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
+    if data=="become_customer":
+        await q.message.edit_text(
+          "🛒 <b>BECOME A CUSTOMER</b>\n\n"
+          "🍔 Swiggy food ko simple manual ordering support ke saath order karein.\n"
+          "💸 Low-price food offers/order support\n"
+          "🛡️ Safe & reliable process\n"
+          "📍 Address + cart + screenshot share karein\n"
+          "💳 Final amount verify hone ke baad payment karein\n"
+          "👨‍💼 Order Palace Admin manually place karega\n\n"
+          "👇 Customer menu:",
+          parse_mode="HTML",reply_markup=main_menu())
+        return
+    if data=="become_seller":
+        await q.message.edit_text(
+          "🏪 <b>BECOME A SELLER</b>\n\n"
+          "Swiggy Palace Seller banne ke fayde:\n\n"
+          "🤝 Palace ke saath directly kaam karein\n"
+          "🛡️ Safe & reliable managed process\n"
+          "📱 Customer/order management tools ek hi jagah\n"
+          "🏰 Approval ke baad <b>Mini Admin</b> access\n"
+          "💯 <b>Bot-side commission: ₹0</b>\n"
+          "🚫 Idhar-udhar alag service dhoondhne ki zarurat nahi\n"
+          "🔔 Seller request direct Super Admin ko approval ke liye jayegi.\n\n"
+          "⚠️ Seller approval ke baad hi Mini Admin access activate hoga.",
+          parse_mode="HTML",
+          reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back",callback_data="start_roles")]])
+        )
+        return
+    if data=="start_roles":
+        await q.message.edit_text(
+          "🏰 <b>SWIGGY PALACE</b> 👑\n\n👇 <b>Choose your role:</b>",
+          parse_mode="HTML",reply_markup=role_menu())
+        return
     if data=="new_order":
         oid=await db.create_order(uid); state[uid]={"action":"address","oid":oid}
         await q.message.reply_text(f"🛒 <b>{oid}</b> created.\n\n📍 Ab apna <b>Swiggy Address Link</b> bhejo.",parse_mode="HTML")
