@@ -14,6 +14,14 @@ def main_menu():
       [InlineKeyboardButton("🆘 Help & Support",callback_data="help_support")]
     ])
 
+def mini_admin_menu():
+    return InlineKeyboardMarkup([
+      [InlineKeyboardButton("📥 My Orders",callback_data="m_new"),InlineKeyboardButton("📦 Active Orders",callback_data="m_active")],
+      [InlineKeyboardButton("💳 Payments",callback_data="m_pay"),InlineKeyboardButton("👥 My Customers",callback_data="m_customers")],
+      [InlineKeyboardButton("📊 My Stats",callback_data="m_stats"),InlineKeyboardButton("📷 My QR",callback_data="m_qr")],
+      [InlineKeyboardButton("💬 Support",callback_data="m_support"),InlineKeyboardButton("👤 My Profile",callback_data="m_profile")]
+    ])
+
 def admin_menu():
     return InlineKeyboardMarkup([
       [InlineKeyboardButton("📥 New Orders",callback_data="a_new"),InlineKeyboardButton("💳 Payments",callback_data="a_pay")],
@@ -22,6 +30,7 @@ def admin_menu():
       [InlineKeyboardButton("🎫 Help & Support",callback_data="a_support")],
       [InlineKeyboardButton("📢 Broadcast",callback_data="a_broadcast")],
       [InlineKeyboardButton("🔎 Search ID",callback_data="a_search")],
+      [InlineKeyboardButton("📢 Force Join",callback_data="a_forcejoin")],
       [InlineKeyboardButton("📷 Payment QR",callback_data="a_qr"),InlineKeyboardButton("⚙️ Settings",callback_data="a_settings")]
     ])
 
@@ -29,6 +38,8 @@ def order_actions(oid):
     return InlineKeyboardMarkup([
       [InlineKeyboardButton("💳 Payment",callback_data=f"pay:{oid}"),InlineKeyboardButton("📍 Request Address",callback_data=f"reqaddr:{oid}")],
       [InlineKeyboardButton("🛒 Request Cart",callback_data=f"reqcart:{oid}")],
+      [InlineKeyboardButton("🧾 Set Swiggy Order ID",callback_data=f"setid:{oid}")],
+      [InlineKeyboardButton("💰 Set Final Price",callback_data=f"setprice:{oid}")],
       [InlineKeyboardButton("✅ Mark Placed",callback_data=f"placed:{oid}"),InlineKeyboardButton("🏁 Complete",callback_data=f"complete:{oid}")],
       [InlineKeyboardButton("↩️ Refund",callback_data=f"refund:{oid}")]
     ])
