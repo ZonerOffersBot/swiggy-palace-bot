@@ -215,7 +215,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
             await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
         except Exception:
             await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
-    elif data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
+    elif data.startswith("orderview:") or data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
         await admin_callback(q,context,data)
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
         await admin_priority_callback(q,data)
@@ -258,7 +258,35 @@ async def admin_callback(q,context,data):
              f"🧾 Swiggy Order ID: {o['swiggy_order_id'] or '-'}\n\n"
              f"📍 Address: {o['address_link'] or '-'}\n"
              f"🛒 Cart: {o['cart_link'] or '-'}")
-        await q.message.reply_text(msg,parse_mode="HTML",reply_markup=order_actions(oid))
+        kb=order_actions(oid).inline_keyboard
+        kb.insert(0,[InlineKeyboardButton("👤 Open Customer",callback_data=f"userview:{o['customer_id']}")])
+        await q.message.reply_text(msg,parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
+    elif data.startswith("userview:"):
+        cid=int(data.split(":",1)[1])
+        customer=await db.get_user(cid)
+        if not customer:
+            await q.message.reply_text("❌ Customer not found.")
+            return
+        if uid!=OWNER_ID:
+            assigned=await db.get_customer_admin(cid)
+            if assigned and int(assigned)!=uid:
+                await q.message.reply_text("🔒 Ye customer kisi aur Admin ko assigned hai.")
+                return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT COUNT(*) AS n FROM orders WHERE customer_id=?",(cid,))
+        count=(await cur.fetchone())["n"]
+        cur=await dbx.execute("SELECT id,status,total FROM orders WHERE customer_id=? ORDER BY created_at DESC LIMIT 10",(cid,))
+        orders=await cur.fetchall()
+        await dbx.close()
+        pid=customer["public_id"] or "-"
+        name=customer["first_name"] or customer["username"] or str(cid)
+        rating=(customer["rating_sum"]/customer["rating_count"] if customer["rating_count"] else 0)
+        lines=[f"👤 <b>CUSTOMER DETAILS</b>","",f"🪪 Customer ID: <code>{pid}</code>",f"🆔 Telegram ID: <code>{cid}</code>",f"👤 Name: {name}",f"⭐ Rating: {rating:.1f}",f"⚠️ Warnings: {customer['warnings']}",f"📦 Total Orders: {count}",""]
+        if orders:
+            lines.append("<b>Recent Orders</b>")
+            lines.extend([f"• <code>{x['id']}</code> — {x['status']} — ₹{x['total']:.0f}" for x in orders])
+        back=f"orderview:{orders[0]['id']}" if orders else "a_new"
+        await q.message.reply_text("\n".join(lines),parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Order",callback_data=back)]]))
     elif data=="a_pay":
         dbx=await db.connect(); cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' ORDER BY o.created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
         if not rows: await q.message.reply_text("💳 No pending payment verification."); return
