@@ -20,6 +20,7 @@ def admin_menu():
       [InlineKeyboardButton("📦 Active Orders",callback_data="a_active"),InlineKeyboardButton("📊 Stats",callback_data="a_stats")],
       [InlineKeyboardButton("👨‍💼 Admins",callback_data="a_admins"),InlineKeyboardButton("💰 Charges",callback_data="a_charges")],
       [InlineKeyboardButton("🎫 Help & Support",callback_data="a_support")],
+      [InlineKeyboardButton("🔎 Search ID",callback_data="a_search")],
       [InlineKeyboardButton("🔳 QR Settings",callback_data="a_qr"),InlineKeyboardButton("⚙️ Settings",callback_data="a_settings")]
     ])
 
