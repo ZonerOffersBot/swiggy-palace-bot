@@ -50,6 +50,7 @@ async def admin_cmd(update,context):
 async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
     if data=="become_customer":
+        await db.assign_public_id(uid,"customer")
         await q.message.edit_text(
           "🛒 <b>BECOME A CUSTOMER</b>\n\n"
           "🍔 Swiggy food ko simple manual ordering support ke saath order karein.\n"
@@ -85,16 +86,48 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if data=="new_order":
         active=await db.has_unfinished_order(uid)
         if active:
+            fee=await db.second_order_fee()
+            unlock=await db.has_second_order_unlock(uid)
+            if not unlock:
+                qr,_=await db.payment_qr_for(uid)
+                msg=(f"🔒 <b>NEW ORDER LOCKED</b>\n\n"
+                     f"🆔 Current Order: <code>{active['id']}</code>\n"
+                     f"📌 Status: {active['status']}\n\n"
+                     f"Ek active order already hai. 2nd order ke liye pehle <b>Palace Charge ₹{fee:.0f}</b> advance pay karna hoga.\n\n"
+                     "💳 QR par payment karo → UTR bhejo → screenshot bhejo.\n"
+                     "Payment verify hone ke baad New Order unlock hoga.")
+                kb=InlineKeyboardMarkup([[InlineKeyboardButton(f"💳 Pay 2nd Order Charge ₹{fee:.0f}",callback_data="second_order_pay")]])
+                if qr:
+                    try:
+                        await q.message.reply_photo(qr,caption=msg,parse_mode="HTML",reply_markup=kb)
+                    except Exception:
+                        await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML",reply_markup=kb)
+                else:
+                    await q.message.reply_text(msg+"\n\n⚠️ QR configured nahi hai.",parse_mode="HTML",reply_markup=kb)
+                return
             await q.message.reply_text(
+
               f"⚠️ <b>Aapka ek order already active hai.</b>\n\n"
               f"🆔 Current Order: <code>{active['id']}</code>\n"
               f"📌 Status: {active['status']}\n\n"
               "Ek time par sirf ek active order allowed hai.\n"
-              "Agar order complete hone se pehle 2nd order chahiye, pehle 2nd order ka required charge/payment complete karna hoga.",
+              "2nd order unlock charge verified hai. Aap next order flow continue kar sakte ho.",
               parse_mode="HTML")
             return
         oid=await db.create_order(uid); state[uid]={"action":"address","oid":oid}
         await q.message.reply_text(f"🛒 <b>{oid}</b> created.\n\n📍 Ab apna <b>Swiggy Address Link</b> bhejo.",parse_mode="HTML")
+    elif data=="second_order_pay":
+        fee=await db.second_order_fee()
+        qr,aid=await db.payment_qr_for(uid)
+        if not qr:
+            await q.message.reply_text(f"🔒 <b>2nd Order Unlock</b>\n\nAdvance Palace Charge: ₹{fee:.0f}\n⚠️ Assigned Admin ka QR configured nahi hai.",parse_mode="HTML")
+            return
+        state[uid]={"action":"second_order_utr","fee":fee,"admin_id":aid}
+        msg=(f"🔓 <b>2ND ORDER UNLOCK</b>\n\n💰 Advance Palace Charge: ₹{fee:.0f}\n\n"
+             "1️⃣ QR par payment karo\n2️⃣ UTR number bhejo\n3️⃣ Payment screenshot bhejo\n\n"
+             "🔒 Proof sirf aapke assigned Admin ko jayega.")
+        try: await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
+        except Exception: await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
     elif data=="priority":
         fee=float(await db.setting("priority_fee","49"))
         aid=await db.assign_customer_admin(uid)
@@ -264,8 +297,11 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif action=="payment_utr":
         await db.update_order(oid,payment_utr=text); dbx=await db.connect(); await dbx.execute("INSERT OR REPLACE INTO payments(order_id,utr,amount,created_at,updated_at) VALUES(?,?,?,?,?)",(oid,text,(await db.get_order(oid))["total"],db.now(),db.now())); await dbx.commit(); await dbx.close()
         state[uid]={"action":"payment_proof","oid":oid}; await update.message.reply_text("📸 UTR saved. Ab payment screenshot bhejo.\n🔒 Screenshot sirf aapke assigned Admin ko jayega.")
+    elif action=="second_order_utr":
+        state[uid]={"action":"second_order_proof","utr":text,"fee":s["fee"],"admin_id":s.get("admin_id",0)}
+        await update.message.reply_text("📸 UTR saved. Ab 2nd order unlock payment screenshot bhejo.")
     elif action=="priority_utr":
-        state[uid]={"action":"priority_proof","utr":text,"fee":s["fee"]}; await update.message.reply_text("📸 Priority payment screenshot bhejo.")
+        state[uid]={"action":"priority_proof","utr":text,"fee":s["fee"],"admin_id":s.get("admin_id",0)}; await update.message.reply_text("📸 Priority payment screenshot bhejo.")
     elif action=="swiggyid":
         await db.update_order(oid,swiggy_order_id=text); state.pop(uid,None); await update.message.reply_text(f"🧾 {oid} Swiggy Order ID saved: {text}")
 
@@ -286,6 +322,13 @@ async def photo_handler(update,context):
         o=await db.get_order(oid); aid=int(o["assigned_admin"] or await db.get_customer_admin(uid) or OWNER_ID)
         if aid:
             try: await context.bot.send_photo(aid,fid,caption=f"💳 Payment pending: {oid}\nCustomer: {uid}\nUTR: {o['payment_utr'] or '-'}\n🔒 Assigned customer payment — Use /admin → Payments.")
+            except: pass
+    elif action=="second_order_proof":
+        await db.create_second_order_payment(uid,s["fee"],s["utr"],fid); state.pop(uid,None)
+        await update.message.reply_text("🔓 2nd order unlock payment received. Assigned Admin verification pending.")
+        aid=int(s.get("admin_id") or await db.get_customer_admin(uid) or OWNER_ID)
+        if aid:
+            try: await context.bot.send_photo(aid,fid,caption=f"🔓 2nd order unlock payment pending from {uid}\n💰 ₹{s['fee']:.0f}\nUTR: {s['utr']}\n🔒 Assigned customer payment.")
             except: pass
     elif action=="priority_proof":
         dbx=await db.connect(); await dbx.execute("INSERT INTO priority_payments(customer_id,amount,utr,proof,created_at) VALUES(?,?,?,?,?)",(uid,s["fee"],s["utr"],fid,db.now())); await dbx.commit(); await dbx.close(); state.pop(uid,None)
