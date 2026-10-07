@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS ticket_messages(
  body TEXT, created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
+CREATE TABLE IF NOT EXISTS admins(
+ id INTEGER PRIMARY KEY,
+ role TEXT DEFAULT 'order_admin',
+ display_name TEXT DEFAULT '',
+ qr_value TEXT DEFAULT '',
+ qr_enabled INTEGER DEFAULT 1,
+ active INTEGER DEFAULT 1,
+ created_at TEXT,
+ updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS audit_log(
  id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER, action TEXT,
  order_id TEXT, details TEXT, created_at TEXT
@@ -88,6 +98,39 @@ async def set_setting(key,value):
     db=await connect()
     await db.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,str(value)))
     await db.commit(); await db.close()
+
+async def is_db_admin(uid):
+    db=await connect(); cur=await db.execute("SELECT active FROM admins WHERE id=?",(uid,))
+    row=await cur.fetchone(); await db.close()
+    return bool(row and row["active"])
+
+async def ensure_bootstrap_admins(admin_ids):
+    db=await connect()
+    for aid in admin_ids:
+        await db.execute("INSERT OR IGNORE INTO admins(id,role,display_name,created_at,updated_at) VALUES(?,?,?,?,?)",(aid,"order_admin","",now(),now()))
+    await db.commit(); await db.close()
+
+async def list_admins():
+    db=await connect(); cur=await db.execute("SELECT * FROM admins WHERE active=1 ORDER BY id")
+    rows=await cur.fetchall(); await db.close(); return rows
+
+async def get_admin(aid):
+    db=await connect(); cur=await db.execute("SELECT * FROM admins WHERE id=?",(aid,))
+    row=await cur.fetchone(); await db.close(); return row
+
+async def add_admin(aid,role="order_admin",name=""):
+    db=await connect()
+    await db.execute("""INSERT INTO admins(id,role,display_name,created_at,updated_at)
+        VALUES(?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET role=excluded.role,display_name=excluded.display_name,active=1,updated_at=excluded.updated_at""",
+        (aid,role,name,now(),now()))
+    await db.commit(); await db.close()
+
+async def remove_admin(aid):
+    db=await connect(); await db.execute("UPDATE admins SET active=0,updated_at=? WHERE id=?",(now(),aid)); await db.commit(); await db.close()
+
+async def set_admin_qr(aid,value,enabled=True):
+    db=await connect(); await db.execute("UPDATE admins SET qr_value=?,qr_enabled=?,updated_at=? WHERE id=?",(value,1 if enabled else 0,now(),aid)); await db.commit(); await db.close()
 
 async def create_order(customer_id):
     db=await connect()
