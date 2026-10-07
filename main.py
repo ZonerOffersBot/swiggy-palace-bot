@@ -134,6 +134,23 @@ async def admin_cmd(update,context):
     else:
         await update.message.reply_text("👑 <b>Swiggy Palace Admin Panel</b>",parse_mode="HTML",reply_markup=admin_menu())
 
+async def seller_entry_callback(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    q=update.callback_query
+    await q.answer()
+    uid=q.from_user.id
+    state[uid]={"action":"seller_form","step":0,"data":{}}
+    await q.message.edit_text(
+        "🏪 <b>SELLER APPLICATION FORM</b>\\n\\n"
+        "Swiggy Palace Seller banne ke liye neeche details fill karein.\\n"
+        "Har step par aap <b>⏭️ Skip</b> kar sakte hain.\\n\\n"
+        "1️⃣ <b>Full Name</b> bhejein:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⏭️ Skip",callback_data="seller_skip")],
+            [InlineKeyboardButton("⬅️ Back",callback_data="start_roles")]
+        ])
+    )
+
 async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
     if data=="force_join_check":
@@ -755,7 +772,7 @@ async def main():
     app.add_handler(CommandHandler("cancel",cancel_cmd))
     app.add_handler(CommandHandler("feedback",feedback_cmd))
     app.add_handler(CommandHandler("skip",skip_cmd))
-    app.add_handler(CallbackQueryHandler(callbacks))
+    app.add_handler(CallbackQueryHandler(seller_entry_callback, pattern=r"^become_seller$"))\n    app.add_handler(CallbackQueryHandler(callbacks))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,qr_photo_handler))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
