@@ -96,9 +96,28 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         oid=await db.create_order(uid); state[uid]={"action":"address","oid":oid}
         await q.message.reply_text(f"🛒 <b>{oid}</b> created.\n\n📍 Ab apna <b>Swiggy Address Link</b> bhejo.",parse_mode="HTML")
     elif data=="priority":
-        fee=float(await db.setting("priority_fee","49")); state[uid]={"action":"priority_utr","fee":fee}
-        await q.message.reply_text(f"⭐ <b>High Priority</b>\n\n💰 Advance: ₹{fee:.0f}\n⏱️ Assignment SLA: {await db.setting('priority_sla_minutes','5')} min\n⚠️ Priority means faster processing, not a guaranteed instant order.\n\n"
-          "💳 Payment UTR bhejo aur payment screenshot bhi upload karo.",parse_mode="HTML")
+        fee=float(await db.setting("priority_fee","49"))
+        aid=await db.assign_customer_admin(uid)
+        qr,_=await db.payment_qr_for(uid)
+        if not qr:
+            await q.message.reply_text(
+              "⭐ <b>High Priority</b>\n\n"
+              f"💰 Advance: ₹{fee:.0f}\n"
+              "⚠️ Payment QR abhi configured nahi hai. Admin QR set hone ke baad payment start hoga.",
+              parse_mode="HTML")
+            return
+        state[uid]={"action":"priority_utr","fee":fee,"admin_id":aid}
+        msg=(f"⭐ <b>HIGH PRIORITY</b>\n\n💰 Advance: ₹{fee:.0f}\n"
+             f"⏱️ Assignment SLA: {await db.setting('priority_sla_minutes','5')} min\n"
+             "⚠️ Priority means faster processing, not a guaranteed instant order.\n\n"
+             "1️⃣ <b>QR par payment karo</b>\n"
+             "2️⃣ Payment ka <b>UTR number</b> bhejo\n"
+             "3️⃣ Uske baad <b>payment screenshot</b> upload karo.\n\n"
+             "🔒 Screenshot sirf aapke assigned Palace Admin ko jayega.")
+        try:
+            await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
+        except Exception:
+            await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
     elif data=="my_orders":
         dbx=await db.connect(); cur=await dbx.execute("SELECT id,status,total FROM orders WHERE customer_id=? ORDER BY created_at DESC LIMIT 10",(uid,)); rows=await cur.fetchall(); await dbx.close()
         text="📦 <b>My Orders</b>\n\n"+("\n".join(f"🆔 {r['id']} • {r['status']} • ₹{r['total']:.0f}" for r in rows) if rows else "No orders yet.")
@@ -114,7 +133,25 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif data.startswith("pay:"):
         oid=data.split(":",1)[1]; o=await db.get_order(oid)
         if not o or o["customer_id"]!=uid: return
-        state[uid]={"action":"payment_utr","oid":oid}; await q.message.reply_text(f"💳 <b>{oid}</b>\nTotal payable: ₹{o['total']:.2f}\n\nUTR bhejo, phir payment screenshot upload karo.",parse_mode="HTML")
+        qr,_=await db.payment_qr_for(uid,oid)
+        if not qr:
+            await q.message.reply_text(
+              f"💳 <b>{oid}</b>\n\n"
+              f"Total payable: ₹{o['total']:.2f}\n"
+              "⚠️ Payment QR abhi configured nahi hai. Assigned Admin ko QR set karna hoga.",
+              parse_mode="HTML")
+            return
+        state[uid]={"action":"payment_utr","oid":oid}
+        msg=(f"💳 <b>{oid} PAYMENT</b>\n\n"
+             f"💰 Total payable: ₹{o['total']:.2f}\n\n"
+             "1️⃣ <b>QR par payment karo</b>\n"
+             "2️⃣ Payment ka <b>UTR number</b> bhejo\n"
+             "3️⃣ Uske baad <b>payment screenshot</b> upload karo.\n\n"
+             "🔒 Screenshot sirf aapke assigned Palace Admin ko jayega.")
+        try:
+            await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
+        except Exception:
+            await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
     elif data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
         await admin_callback(q,context,data)
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
@@ -226,7 +263,7 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
             except: pass
     elif action=="payment_utr":
         await db.update_order(oid,payment_utr=text); dbx=await db.connect(); await dbx.execute("INSERT OR REPLACE INTO payments(order_id,utr,amount,created_at,updated_at) VALUES(?,?,?,?,?)",(oid,text,(await db.get_order(oid))["total"],db.now(),db.now())); await dbx.commit(); await dbx.close()
-        state[uid]={"action":"payment_proof","oid":oid}; await update.message.reply_text("📸 Ab payment screenshot bhejo.")
+        state[uid]={"action":"payment_proof","oid":oid}; await update.message.reply_text("📸 UTR saved. Ab payment screenshot bhejo.\n🔒 Screenshot sirf aapke assigned Admin ko jayega.")
     elif action=="priority_utr":
         state[uid]={"action":"priority_proof","utr":text,"fee":s["fee"]}; await update.message.reply_text("📸 Priority payment screenshot bhejo.")
     elif action=="swiggyid":
@@ -239,20 +276,23 @@ async def photo_handler(update,context):
     if action=="screenshot":
         await db.update_order(oid,cart_screenshot=fid,status="screenshot_received"); state.pop(uid,None)
         await update.message.reply_text(f"📸 {oid} screenshot received. Palace Admin will verify cart and enter actual Swiggy price.")
-        for aid in ADMIN_IDS:
+        o=await db.get_order(oid); aid=int(o["assigned_admin"] or await db.get_customer_admin(uid) or OWNER_ID)
+        if aid:
             try: await context.bot.send_message(aid,f"📥 New cart screenshot for {oid} from customer {uid}. Open Admin Panel with /admin.")
             except: pass
     elif action=="payment_proof":
         dbx=await db.connect(); await dbx.execute("UPDATE payments SET proof=?,status='pending',updated_at=? WHERE order_id=?",(fid,db.now(),oid)); await dbx.commit(); await dbx.close(); state.pop(uid,None)
         await update.message.reply_text(f"💳 Payment proof received for {oid}. Manual verification pending.")
-        for aid in ADMIN_IDS:
-            try: await context.bot.send_photo(aid,fid,caption=f"💳 Payment pending: {oid}\nCustomer: {uid}\nUse /admin → Payments.")
+        o=await db.get_order(oid); aid=int(o["assigned_admin"] or await db.get_customer_admin(uid) or OWNER_ID)
+        if aid:
+            try: await context.bot.send_photo(aid,fid,caption=f"💳 Payment pending: {oid}\nCustomer: {uid}\nUTR: {o['payment_utr'] or '-'}\n🔒 Assigned customer payment — Use /admin → Payments.")
             except: pass
     elif action=="priority_proof":
         dbx=await db.connect(); await dbx.execute("INSERT INTO priority_payments(customer_id,amount,utr,proof,created_at) VALUES(?,?,?,?,?)",(uid,s["fee"],s["utr"],fid,db.now())); await dbx.commit(); await dbx.close(); state.pop(uid,None)
         await update.message.reply_text("⭐ Priority payment received. Admin verification pending.")
-        for aid in ADMIN_IDS:
-            try: await context.bot.send_photo(aid,fid,caption=f"⭐ Priority payment pending from {uid}. Use /prioritypay.")
+        aid=int(s.get("admin_id") or await db.get_customer_admin(uid) or OWNER_ID)
+        if aid:
+            try: await context.bot.send_photo(aid,fid,caption=f"⭐ Priority payment pending from {uid}\n💰 ₹{s['fee']:.0f}\nUTR: {s['utr']}\n🔒 Assigned customer payment.")
             except: pass
 
 async def price_cmd(update,context):
