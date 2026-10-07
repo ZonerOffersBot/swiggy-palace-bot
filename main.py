@@ -54,7 +54,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         oid=data.split(":",1)[1]; o=await db.get_order(oid)
         if not o or o["customer_id"]!=uid: return
         state[uid]={"action":"payment_utr","oid":oid}; await q.message.reply_text(f"💳 <b>{oid}</b>\nTotal payable: ₹{o['total']:.2f}\n\nUTR bhejo, phir payment screenshot upload karo.",parse_mode="HTML")
-    elif data.startswith("a_") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
+    elif data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
         await admin_callback(q,context,data)
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
         await admin_priority_callback(q,data)
@@ -245,8 +245,7 @@ async def main():
           ("start","🏰 Start Swiggy Palace"),("admin","👑 Admin Panel"),
           ("feedback","⭐ Order Feedback")
         ])
-    app.post_init=post_init
-    await app.initialize(); await app.start()
+    await app.initialize(); await post_init(app); await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     from uvicorn import Config, Server
     web=Starlette(routes=[Route("/health",health)])
