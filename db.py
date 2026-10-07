@@ -8,6 +8,7 @@ def now():
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(
  id INTEGER PRIMARY KEY, username TEXT DEFAULT '', first_name TEXT DEFAULT '',
+ role TEXT DEFAULT '', public_id TEXT UNIQUE,
  rating_sum INTEGER DEFAULT 0, rating_count INTEGER DEFAULT 0,
  warnings INTEGER DEFAULT 0, priority INTEGER DEFAULT 0, priority_paid INTEGER DEFAULT 0,
  created_at TEXT, last_seen TEXT
@@ -69,6 +70,10 @@ async def connect():
 async def init_db():
     db=await connect()
     await db.executescript(SCHEMA)
+    for sql in ("ALTER TABLE users ADD COLUMN role TEXT DEFAULT ''", "ALTER TABLE users ADD COLUMN public_id TEXT"):
+        try: await db.execute(sql)
+        except Exception: pass
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id)")
     defaults={
       "palace_charge":"30","palace_charge_enabled":"1",
       "priority_fee":"49","priority_sla_minutes":"5",
@@ -88,6 +93,33 @@ async def upsert_user(user):
       (user.id,user.username or "",user.first_name or "",now(),now())
     )
     await db.commit(); await db.close()
+
+async def assign_public_id(uid, role):
+    prefix="CUST" if role=="customer" else "SELL"
+    db=await connect()
+    cur=await db.execute("SELECT public_id FROM users WHERE id=?",(uid,))
+    row=await cur.fetchone()
+    if row and row["public_id"]:
+        await db.close()
+        return row["public_id"]
+    cur=await db.execute("SELECT public_id FROM users WHERE role=? AND public_id IS NOT NULL ORDER BY rowid DESC LIMIT 1",(role,))
+    row=await cur.fetchone()
+    try: n=int(str(row["public_id"]).split("-")[-1])+1 if row else 1
+    except Exception: n=1
+    public_id=f"SP-{prefix}-{n:04d}"
+    await db.execute("UPDATE users SET role=?,public_id=? WHERE id=?",(role,public_id,uid))
+    await db.commit(); await db.close()
+    return public_id
+
+async def get_user_by_public_id(public_id):
+    db=await connect()
+    cur=await db.execute("SELECT * FROM users WHERE public_id=?",(public_id.strip().upper(),))
+    row=await cur.fetchone(); await db.close(); return row
+
+async def get_user(uid):
+    db=await connect()
+    cur=await db.execute("SELECT * FROM users WHERE id=?",(uid,))
+    row=await cur.fetchone(); await db.close(); return row
 
 async def setting(key,default=None):
     db=await connect(); cur=await db.execute("SELECT value FROM settings WHERE key=?",(key,))
