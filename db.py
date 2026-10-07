@@ -90,7 +90,14 @@ async def init_db():
     for sql in ("ALTER TABLE users ADD COLUMN role TEXT DEFAULT ''", "ALTER TABLE users ADD COLUMN public_id TEXT"):
         try: await db.execute(sql)
         except Exception: pass
-    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id)")
+    try:
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id)")
+    except Exception:
+        # Old databases may contain duplicate/legacy public IDs; do not crash bot startup.
+        try:
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_users_public_id_fallback ON users(public_id)")
+        except Exception:
+            pass
     defaults={
       "palace_charge":"30","palace_charge_enabled":"1",
       "priority_fee":"49","priority_sla_minutes":"5",
