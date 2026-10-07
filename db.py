@@ -101,7 +101,7 @@ async def init_db():
     defaults={
       "palace_charge":"30","palace_charge_enabled":"1",
       "priority_fee":"49","priority_sla_minutes":"5",
-      "business_open":"on","default_qr":""
+      "business_open":"on","default_qr":"","force_join_channels":"@Swiggypalace","force_join_verified":""
     }
     for k,v in defaults.items():
         await db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",(k,v))
