@@ -309,10 +309,22 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
         await admin_priority_callback(q,data)
 
+async def broadcast_callback(q,context):
+    uid=q.from_user.id
+    if uid!=OWNER_ID:
+        await q.message.reply_text("🔒 Sirf Super Admin broadcast bhej sakta hai.")
+        return
+    state[uid]={"action":"broadcast"}
+    await q.message.reply_text("📢 <b>BROADCAST</b>\n\nApna message bhejo. Ye sab registered users ko send hoga.\n\n❌ Cancel: /cancel",parse_mode="HTML")
+
+async def cancel_cmd(update,context):
+    state.pop(update.effective_user.id,None)
+    await update.message.reply_text("❌ Cancelled.")
+
 async def admin_callback(q,context,data):
     uid=q.from_user.id
     if not await is_admin(uid): return
-    if data=="a_stats":
+    if data=="a_broadcast":\n        await broadcast_callback(q,context)\n    elif data=="a_stats":
         s=await db.stats(); await q.message.reply_text(f"📊 <b>Palace Stats</b>\n👥 Customers: {s['customers']}\n📦 Orders: {s['orders']}\n🏁 Completed: {s['completed']}\n⏳ Active: {s['active']}\n🍔 Swiggy Value: ₹{s['swiggy']:.2f}\n💰 Palace Charges: ₹{s['charges']:.2f}\n↩️ Refunds: ₹{s['refunds']:.2f}",parse_mode="HTML")
     elif data=="a_new":
         dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status IN ('new','address_received','cart_received','screenshot_received','price_confirmed') ORDER BY priority DESC,created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
@@ -424,7 +436,7 @@ async def admin_callback(q,context,data):
           "📤 Default QR photo upload karein, ya kisi Admin ke liye alag QR set karein.",
           parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_settings":
-        await q.message.reply_text("⚙️ Settings\n/setcharge 30\n/setpriority 49\n/setbusiness on|off\n/setqr VALUE")
+        await q.message.reply_text("⚙️ <b>Settings</b>\n\n💰 /setcharge 30\n⭐ /setpriority 49\n🏪 /setbusiness on|off\n\n📷 Payment QR ab <b>Admin Panel → 📷 Payment QR → Upload Default QR Photo</b> se set karein.",parse_mode="HTML")
     elif data.startswith("approvepay:"):
         await approve_payment(q,data.split(":")[1],True)
     elif data.startswith("rejectpay:"):
@@ -470,6 +482,23 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
     if not s: return
     action=s["action"]; oid=s.get("oid")
+    if action=="broadcast":
+        if uid!=OWNER_ID:
+            state.pop(uid,None); return
+        state.pop(uid,None)
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT id FROM users")
+        users=await cur.fetchall()
+        await dbx.close()
+        sent=failed=0
+        for row in users:
+            try:
+                await context.bot.send_message(int(row["id"]),text)
+                sent+=1
+            except Exception:
+                failed+=1
+        await update.message.reply_text(f"📢 <b>Broadcast Complete</b>\n\n✅ Sent: {sent}\n❌ Failed: {failed}",parse_mode="HTML")
+        return
     if action in ("address","cart"):
         field="address_link" if action=="address" else "cart_link"
         await db.update_order(oid,**{field:text,"status":"address_received" if action=="address" else "cart_received"})
@@ -570,7 +599,7 @@ async def setqr(update,context):
     if update.effective_user.id!=OWNER_ID:
         return
     if not context.args:
-        await update.message.reply_text("🔳 Usage: /setqr <Telegram file_id or image URL>")
+        await update.message.reply_text("📷 Send a QR photo from Admin Panel.\n\n🔳 /setqr is no longer needed.")
         return
     value=" ".join(context.args).strip()
     await db.set_setting("default_qr",value)
@@ -615,6 +644,7 @@ async def main():
     app.add_handler(CommandHandler("setpriority",setpriority))
     app.add_handler(CommandHandler("setbusiness",setbusiness))
     app.add_handler(CommandHandler("setqr",setqr))
+    app.add_handler(CommandHandler("cancel",cancel_cmd))
     app.add_handler(CommandHandler("feedback",feedback_cmd))
     app.add_handler(CommandHandler("skip",lambda u,c: u.message.reply_text("⏭️ Skipped.")))
     app.add_handler(CallbackQueryHandler(callbacks))
