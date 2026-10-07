@@ -98,8 +98,9 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         await q.message.reply_text(f"👤 <b>Profile</b>\n⭐ Rating: {(r['rating_sum']/r['rating_count'] if r['rating_count'] else 0):.1f}\n⚠️ Warnings: {r['warnings']}\n📦 Orders: use My Orders",parse_mode="HTML")
     elif data=="help":
         await q.message.reply_text("📖 <b>How it works</b>\n\n1️⃣ Place New Order\n2️⃣ 📍 Address link\n3️⃣ 🛒 Cart link\n4️⃣ 📸 Cart screenshot\n5️⃣ 💰 Palace gives final price\n6️⃣ 💳 Pay + UTR/proof\n7️⃣ ✅ Payment is manually verified\n8️⃣ 👨‍💼 Admin manually places Swiggy order\n9️⃣ 📦 Swiggy Order ID/status shared\n🔟 🏁 Completion + feedback",parse_mode="HTML")
-    elif data=="ticket":
-        state[uid]={"action":"ticket_subject"}; await q.message.reply_text("🎫 Support ticket ke liye apni problem/message bhejo.")
+    elif data=="help_support" or data=="ticket":
+        state[uid]={"action":"ticket_subject"}
+        await q.message.reply_text("🆘 <b>Help & Support</b>\n\nApni query/problem ek message me likho.\nAapki query Ticket ID aur unique ID ke saath Owner ko milegi.",parse_mode="HTML")
     elif data.startswith("pay:"):
         oid=data.split(":",1)[1]; o=await db.get_order(oid)
         if not o or o["customer_id"]!=uid: return
