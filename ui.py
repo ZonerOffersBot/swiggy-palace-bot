@@ -11,7 +11,7 @@ def main_menu():
       [InlineKeyboardButton("🛒 Place New Order",callback_data="new_order")],
       [InlineKeyboardButton("⭐ Become High Priority",callback_data="priority")],
       [InlineKeyboardButton("📦 My Orders",callback_data="my_orders"),InlineKeyboardButton("👤 My Profile",callback_data="profile")],
-      [InlineKeyboardButton("💬 Help & Tutorial",callback_data="help"),InlineKeyboardButton("🎫 Support",callback_data="ticket")]
+      [InlineKeyboardButton("🆘 Help & Support",callback_data="help_support")]
     ])
 
 def admin_menu():
@@ -19,6 +19,7 @@ def admin_menu():
       [InlineKeyboardButton("📥 New Orders",callback_data="a_new"),InlineKeyboardButton("💳 Payments",callback_data="a_pay")],
       [InlineKeyboardButton("📦 Active Orders",callback_data="a_active"),InlineKeyboardButton("📊 Stats",callback_data="a_stats")],
       [InlineKeyboardButton("👨‍💼 Admins",callback_data="a_admins"),InlineKeyboardButton("💰 Charges",callback_data="a_charges")],
+      [InlineKeyboardButton("🎫 Help & Support",callback_data="a_support")],
       [InlineKeyboardButton("🔳 QR Settings",callback_data="a_qr"),InlineKeyboardButton("⚙️ Settings",callback_data="a_settings")]
     ])
 
