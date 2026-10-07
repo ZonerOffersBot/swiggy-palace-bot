@@ -65,10 +65,12 @@ async def admin_callback(q,context,data):
     if data=="a_stats":
         s=await db.stats(); await q.message.reply_text(f"📊 <b>Palace Stats</b>\n👥 Customers: {s['customers']}\n📦 Orders: {s['orders']}\n🏁 Completed: {s['completed']}\n⏳ Active: {s['active']}\n🍔 Swiggy Value: ₹{s['swiggy']:.2f}\n💰 Palace Charges: ₹{s['charges']:.2f}\n↩️ Refunds: ₹{s['refunds']:.2f}",parse_mode="HTML")
     elif data=="a_new":
-        dbx=await db.connect(); cur=await dbx.execute("SELECT * FROM orders WHERE status IN ('new','address_received','cart_received','screenshot_received','price_confirmed') ORDER BY priority DESC,created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
-        if not rows: await q.message.reply_text("📥 No new orders."); return
-        for o in rows:
-            await q.message.reply_text(f"📦 <b>{o['id']}</b>\n👤 {o['customer_id']}\n📍 {o['address_link'] or '-'}\n🛒 {o['cart_link'] or '-'}\n💰 Swiggy ₹{o['swiggy_amount']:.2f}\n🏰 Charge ₹{o['palace_charge']:.2f}\n💳 {o['payment_status']}",parse_mode="HTML",reply_markup=order_actions(o["id"]))
+        dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status IN ('new','address_received','cart_received','screenshot_received','price_confirmed') ORDER BY priority DESC,created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nNo new orders.",parse_mode="HTML"); return
+        kb=[[InlineKeyboardButton(f"🆔 {o['id']}",callback_data=f"orderview:{o['id']}")] for o in rows]
+        kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_new"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
+        await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_pay":
         dbx=await db.connect(); cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' ORDER BY o.created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
         if not rows: await q.message.reply_text("💳 No pending payment verification."); return
@@ -76,8 +78,12 @@ async def admin_callback(q,context,data):
             kb=[[__import__('telegram').InlineKeyboardButton("✅ Approve",callback_data=f"approvepay:{o['id']}"),__import__('telegram').InlineKeyboardButton("❌ Reject",callback_data=f"rejectpay:{o['id']}")]]
             await q.message.reply_text(f"💳 <b>{o['id']}</b>\n💰 ₹{o['total']:.2f}\nUTR: {o['utr']}",parse_mode="HTML",reply_markup=__import__('telegram').InlineKeyboardMarkup(kb))
     elif data=="a_active":
-        dbx=await db.connect(); cur=await dbx.execute("SELECT * FROM orders WHERE status NOT IN ('completed','cancelled','refund_completed') ORDER BY priority DESC,updated_at DESC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
-        await q.message.reply_text("📦 Active orders: "+(", ".join(r["id"] for r in rows) if rows else "none"))
+        dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status NOT IN ('completed','cancelled','refund_completed') ORDER BY priority DESC,updated_at DESC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("📦 <b>ONGOING ORDERS</b>\n\nNo ongoing orders.",parse_mode="HTML"); return
+        kb=[[InlineKeyboardButton(f"🆔 {o['id']}",callback_data=f"orderview:{o['id']}")] for o in rows]
+        kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_active"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
+        await q.message.reply_text("📦 <b>ONGOING ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_admins":
         await q.message.reply_text("👨‍💼 Admin management is available through environment OWNER_ID/ADMIN_IDS in this first production build. Database role controls are ready for extension.")
     elif data=="a_charges":
