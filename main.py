@@ -356,6 +356,22 @@ async def broadcast_callback(q,context):
     state[uid]={"action":"broadcast"}
     await q.message.reply_text("📢 <b>BROADCAST</b>\n\nApna message bhejo. Ye sab registered users ko send hoga.\n\n❌ Cancel: /cancel",parse_mode="HTML")
 
+async def skip_cmd(update,context):
+    uid=update.effective_user.id
+    s=state.get(uid)
+    if s and s.get("action")=="feedback_review":
+        oid=s.get("oid"); o=await db.get_order(oid)
+        if o and int(o["customer_id"])==uid and o["status"]=="completed":
+            rating=int(s.get("rating",5)); dbx=await db.connect()
+            await dbx.execute("UPDATE users SET rating_sum=rating_sum+?,rating_count=rating_count+1 WHERE id=?",(rating,uid))
+            await dbx.execute("UPDATE orders SET notes=COALESCE(notes,'') || ?,updated_at=? WHERE id=?",("\nfeedback:"+str(rating)+":",db.now(),oid))
+            await dbx.commit(); await dbx.close()
+            state.pop(uid,None)
+            await update.message.reply_text("🙏 Rating save ho gaya.")
+            return
+    state.pop(uid,None)
+    await update.message.reply_text("⏭️ Skipped.")
+
 async def cancel_cmd(update,context):
     state.pop(update.effective_user.id,None)
     await update.message.reply_text("❌ Cancelled.")
@@ -376,6 +392,20 @@ async def admin_callback(q,context,data):
         await broadcast_callback(q,context)
     elif data=="a_stats":
         s=await db.stats(); await q.message.reply_text(f"📊 <b>Palace Stats</b>\n👥 Customers: {s['customers']}\n📦 Orders: {s['orders']}\n🏁 Completed: {s['completed']}\n⏳ Active: {s['active']}\n🍔 Swiggy Value: ₹{s['swiggy']:.2f}\n💰 Palace Charges: ₹{s['charges']:.2f}\n↩️ Refunds: ₹{s['refunds']:.2f}",parse_mode="HTML")
+    elif data=="a_second":
+        dbx=await db.connect(); cur=await dbx.execute("SELECT customer_id,paid_amount,utr FROM second_order_unlocks WHERE status='pending' ORDER BY created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("🔓 No pending 2nd-order unlock payments."); return
+        for x in rows:
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Verify",callback_data=f"secondapprove:{x['customer_id']}"),InlineKeyboardButton("❌ Reject",callback_data=f"secondreject:{x['customer_id']}")]])
+            await q.message.reply_text(f"🔓 <b>2nd Order Unlock</b>\n👤 Customer: <code>{x['customer_id']}</code>\n💰 ₹{x['paid_amount']:.2f}\nUTR: {x['utr']}",parse_mode="HTML",reply_markup=kb)
+    elif data.startswith("secondapprove:") or data.startswith("secondreject:"):
+        if uid!=OWNER_ID: return
+        cid=int(data.split(":",1)[1]); ok=data.startswith("secondapprove:")
+        await db.verify_second_order_unlock(cid,uid,ok)
+        try: await context.bot.send_message(cid,"✅ 2nd order unlock verified. Ab New Order open karke next order bana sakte ho." if ok else "❌ 2nd order unlock payment rejected.",parse_mode="HTML")
+        except Exception: pass
+        await q.message.reply_text("✅ Unlock verified." if ok else "❌ Unlock rejected.")
     elif data=="a_new":
         dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status IN ('new','address_received','cart_received','screenshot_received','price_confirmed') ORDER BY priority DESC,created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
         if not rows:
