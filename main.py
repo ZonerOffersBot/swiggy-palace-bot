@@ -132,7 +132,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
     if data=="force_join_check":
         if await force_join_required(uid):
-            await q.answer("❌ Pehle channel join karein.",show_alert=True)
+            await q.message.reply_text("❌ Pehle @Swiggypalace channel join karein, phir ✅ I Joined dabayein.")
             return
         await mark_force_join_verified(uid)
         await q.message.edit_text("✅ <b>Verification Complete!</b>\n\n🏰 Welcome to Swiggy Palace.\n👇 Ab apna role choose karein.",parse_mode="HTML",reply_markup=role_menu())
