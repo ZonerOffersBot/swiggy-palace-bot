@@ -369,7 +369,7 @@ async def photo_handler(update,context):
             except: pass
 
 async def price_cmd(update,context):
-    if not is_admin(update.effective_user.id) or len(context.args)<2: return
+    if not await is_admin(update.effective_user.id) or len(context.args)<2: return
     oid,amount=context.args[0],float(context.args[1]); o=await db.get_order(oid)
     if not o: await update.message.reply_text("❌ Order not found."); return
     enabled=await db.setting("palace_charge_enabled","1")=="1"; charge=float(await db.setting("palace_charge","30")) if enabled else 0
@@ -379,7 +379,7 @@ async def price_cmd(update,context):
     except: pass
 
 async def swiggyid_cmd(update,context):
-    if not is_admin(update.effective_user.id) or len(context.args)<2:return
+    if not await is_admin(update.effective_user.id) or len(context.args)<2:return
     oid=" ".join(context.args[:-1]); sid=context.args[-1]; await db.update_order(oid,swiggy_order_id=sid); await update.message.reply_text(f"🧾 {oid}: {sid} saved.")
 
 async def set_cmd(update,context,key,label):
@@ -441,7 +441,11 @@ async def main():
           ("start","🏰 Start Swiggy Palace"),("admin","👑 Admin Panel"),
           ("feedback","⭐ Order Feedback")
         ])
-    await app.initialize(); await post_init(app); await app.start()
+    await app.initialize()
+    me=await app.bot.get_me()
+    log.info("Telegram bot connected as @%s (%s)", me.username, me.id)
+    await post_init(app)
+    await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     log.info("Telegram polling started successfully")
     from uvicorn import Config, Server
