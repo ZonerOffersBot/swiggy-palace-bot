@@ -83,6 +83,16 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
           parse_mode="HTML",reply_markup=role_menu())
         return
     if data=="new_order":
+        active=await db.has_unfinished_order(uid)
+        if active:
+            await q.message.reply_text(
+              f"⚠️ <b>Aapka ek order already active hai.</b>\n\n"
+              f"🆔 Current Order: <code>{active['id']}</code>\n"
+              f"📌 Status: {active['status']}\n\n"
+              "Ek time par sirf ek active order allowed hai.\n"
+              "Agar order complete hone se pehle 2nd order chahiye, pehle 2nd order ka required charge/payment complete karna hoga.",
+              parse_mode="HTML")
+            return
         oid=await db.create_order(uid); state[uid]={"action":"address","oid":oid}
         await q.message.reply_text(f"🛒 <b>{oid}</b> created.\n\n📍 Ab apna <b>Swiggy Address Link</b> bhejo.",parse_mode="HTML")
     elif data=="priority":
