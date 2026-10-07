@@ -55,8 +55,6 @@ async def mark_force_join_verified(uid):
     row=await cur.fetchone()
     ids=[x for x in (row["value"] if row else "").split(",") if x and x!=str(uid)]
     ids.append(str(uid))
-    await dbx.execute("INSERT INTO settings(key,value) VALUES('force_join_verified,',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(",".join(ids),))
-    # Correct the key if SQLite inserted the typo-safe statement above.
     await dbx.execute("INSERT INTO settings(key,value) VALUES('force_join_verified',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(",".join(ids),))
     await dbx.commit(); await dbx.close()
 
@@ -77,6 +75,9 @@ async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user
     await db.upsert_user(u)
     state.pop(u.id,None)
+    if await force_join_required(u.id):
+        await show_force_join(update.message)
+        return
     await update.message.reply_text(
       "🏰 <b>SWIGGY PALACE</b> 👑\n\n"
       "🍔 <b>Manual Swiggy Ordering Service</b>\n\n"
@@ -136,6 +137,20 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
             return
         await mark_force_join_verified(uid)
         await q.message.edit_text("✅ <b>Verification Complete!</b>\n\n🏰 Welcome to Swiggy Palace.\n👇 Ab apna role choose karein.",parse_mode="HTML",reply_markup=role_menu())
+        return
+    if data.startswith("seller_approve:") or data.startswith("seller_reject:"):
+        if uid!=OWNER_ID: return
+        sid=int(data.split(":",1)[1]); ok=data.startswith("seller_approve:")
+        await db.set_setting("seller_status_"+str(sid),"approved" if ok else "rejected")
+        if ok: await db.add_admin(sid,"mini_admin","Seller")
+        try: await context.bot.send_message(sid,"🎉 Seller Approved! Mini Admin access enabled." if ok else "❌ Seller application rejected.")
+        except Exception: pass
+        await q.message.reply_text("✅ Seller approved; Mini Admin enabled." if ok else "❌ Seller rejected."); return
+    if data.startswith("feedback:"):
+        _,oid,rs=data.split(":",2); rating=int(rs); o=await db.get_order(oid)
+        if not o or int(o["customer_id"])!=uid or o["status"]!="completed": return
+        state[uid]={"action":"feedback_review","oid":oid,"rating":rating}
+        await q.message.reply_text(f"⭐ Rating: {rating}/5\n\n📝 Short review bhejo ya /skip.")
         return
     if data=="become_customer":
         await db.assign_public_id(uid,"customer")
@@ -313,7 +328,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         await admin_priority_callback(q,data)
 
 async def submit_seller_application(target,context):
-    uid=target.from_user.id
+    uid=target.from_user.id if hasattr(target,"from_user") else target.effective_user.id
     s=state.get(uid,{})
     data=s.get("data",{})
     await db.set_setting("seller_"+str(uid),json.dumps(data))
@@ -325,7 +340,8 @@ async def submit_seller_application(target,context):
     try: await context.bot.send_message(OWNER_ID,msg,parse_mode="HTML",reply_markup=kb)
     except Exception as e: log.warning("Seller notification failed: %s",e)
     state.pop(uid,None)
-    await target.message.reply_text("✅ <b>Application submitted!</b>\n\n👑 Super Admin approval ke baad Mini Admin access milega.",parse_mode="HTML",reply_markup=role_menu())
+    msg_obj=target.message if hasattr(target,"message") else target.effective_message
+    await msg_obj.reply_text("✅ <b>Application submitted!</b>\n\n👑 Super Admin approval ke baad Mini Admin access milega.",parse_mode="HTML",reply_markup=role_menu())
 
 async def broadcast_callback(q,context):
     uid=q.from_user.id
@@ -351,7 +367,9 @@ async def admin_callback(q,context,data):
         except: pass
         await q.message.reply_text("✅ Seller approved; Mini Admin enabled." if ok else "❌ Seller rejected.")
         return
-    if data=="a_broadcast":\n        await broadcast_callback(q,context)\n    elif data=="a_stats":
+    if data=="a_broadcast":
+        await broadcast_callback(q,context)
+    elif data=="a_stats":
         s=await db.stats(); await q.message.reply_text(f"📊 <b>Palace Stats</b>\n👥 Customers: {s['customers']}\n📦 Orders: {s['orders']}\n🏁 Completed: {s['completed']}\n⏳ Active: {s['active']}\n🍔 Swiggy Value: ₹{s['swiggy']:.2f}\n💰 Palace Charges: ₹{s['charges']:.2f}\n↩️ Refunds: ₹{s['refunds']:.2f}",parse_mode="HTML")
     elif data=="a_new":
         dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status IN ('new','address_received','cart_received','screenshot_received','price_confirmed') ORDER BY priority DESC,created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
@@ -476,7 +494,9 @@ async def admin_callback(q,context,data):
     elif data.startswith("complete:"):
         oid=data.split(":")[1]; await db.update_order(oid,status="completed"); o=await db.get_order(oid)
         await q.message.reply_text(f"🏁 {oid} completed. Customer feedback can now be requested.")
-        try: await context.bot.send_message(o["customer_id"],f"🏁 <b>{oid}</b> completed! ⭐ Please use /feedback {oid} to rate your experience.",parse_mode="HTML")
+        try:
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("⭐1",callback_data=f"feedback:{oid}:1"),InlineKeyboardButton("⭐2",callback_data=f"feedback:{oid}:2"),InlineKeyboardButton("⭐3",callback_data=f"feedback:{oid}:3"),InlineKeyboardButton("⭐4",callback_data=f"feedback:{oid}:4"),InlineKeyboardButton("⭐5",callback_data=f"feedback:{oid}:5")]])
+            await context.bot.send_message(o["customer_id"],f"🏁 <b>{oid}</b> completed!\n\n⭐ Rate your experience:",parse_mode="HTML",reply_markup=kb)
         except: pass
     elif data.startswith("refund:"):
         oid=data.split(":")[1]; o=await db.get_order(oid); dbx=await db.connect()
@@ -516,6 +536,13 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         s["data"][fields[step]]=text.strip(); s["step"]=step+1
         if s["step"]>=len(fields): await submit_seller_application(update,context)
         else: await update.message.reply_text(prompts[s["step"]-1],parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏭️ Skip",callback_data="seller_skip")]]))
+        return
+    if action=="feedback_rating":
+        try: rating=max(1,min(5,int(text)))
+        except Exception:
+            await update.message.reply_text("⭐ 1 se 5 ke beech number bhejo."); return
+        state[uid]={"action":"feedback_review","oid":oid,"rating":rating}
+        await update.message.reply_text("📝 Short review bhejo, ya /skip.")
         return
     if action=="feedback_review":
         oid=s.get("oid"); rating=int(s.get("rating",0)); review=text.strip(); o=await db.get_order(oid)
@@ -677,7 +704,9 @@ async def main():
     await db.init_db()
     await db.ensure_bootstrap_admins(ADMIN_IDS)
     log.info("Database initialized; starting Telegram polling")
-    app=Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()\n    global app_global\n    app_global=app
+    app=Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
+    global app_global
+    app_global=app
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("admin",admin_cmd))
     app.add_handler(CommandHandler("addadmin",addadmin_cmd))
