@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from config import BOT_TOKEN, ADMIN_IDS, OWNER_ID, PORT
 import db
-from ui import main_menu, admin_menu, order_actions, role_menu
+from ui import main_menu, admin_menu, order_actions, role_menu, mini_admin_menu
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log=logging.getLogger("swiggy-palace")
@@ -126,8 +126,13 @@ async def removeadmin_cmd(update,context):
     await update.message.reply_text(f"🗑️ Admin removed: {aid}")
 
 async def admin_cmd(update,context):
-    if not await is_admin(update.effective_user.id): return
-    await update.message.reply_text("👑 <b>Swiggy Palace Admin Panel</b>",parse_mode="HTML",reply_markup=admin_menu())
+    uid=update.effective_user.id
+    if not await is_admin(uid): return
+    a=await db.get_admin(uid)
+    if a and a["role"]=="mini_admin":
+        await update.message.reply_text("🏪 <b>SWIGGY PALACE MINI ADMIN</b>",parse_mode="HTML",reply_markup=mini_admin_menu())
+    else:
+        await update.message.reply_text("👑 <b>Swiggy Palace Admin Panel</b>",parse_mode="HTML",reply_markup=admin_menu())
 
 async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
@@ -719,7 +724,7 @@ async def main():
     app.add_handler(CommandHandler("setqr",setqr))
     app.add_handler(CommandHandler("cancel",cancel_cmd))
     app.add_handler(CommandHandler("feedback",feedback_cmd))
-    app.add_handler(CommandHandler("skip",lambda u,c: u.message.reply_text("⏭️ Skipped.")))
+    app.add_handler(CommandHandler("skip",skip_cmd))
     app.add_handler(CallbackQueryHandler(callbacks))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,qr_photo_handler))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,photo_handler))
