@@ -1,4 +1,5 @@
 import aiosqlite
+from pathlib import Path
 from datetime import datetime, timezone
 from config import DATABASE_PATH
 
@@ -89,8 +90,15 @@ CREATE TABLE IF NOT EXISTS second_order_unlocks(
 """
 
 async def connect():
-    db=await aiosqlite.connect(DATABASE_PATH)
-    db.row_factory=aiosqlite.Row
+    # Render/local-safe database path: create the parent directory when a
+    # custom DATABASE_PATH such as /data/palace.db is supplied.
+    db_path = Path(DATABASE_PATH).expanduser()
+    if db_path.parent != Path("."):
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    db = await aiosqlite.connect(str(db_path), timeout=30)
+    db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA busy_timeout=30000")
+    await db.execute("PRAGMA foreign_keys=ON")
     return db
 
 async def init_db():
