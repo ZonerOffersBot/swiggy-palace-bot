@@ -71,6 +71,9 @@ async def show_force_join(target):
       "1️⃣ Channel join karein\n2️⃣ <b>✅ I Joined</b> dabayein\n3️⃣ Verification ke baad menu open hoga.",
       parse_mode="HTML",reply_markup=kb)
 
+async def ping_cmd(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⚡ Bot is online and replying instantly.")
+
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user
     await db.upsert_user(u)
@@ -912,6 +915,7 @@ async def main():
 
     # Register every Telegram handler before polling starts.
     app.add_handler(CommandHandler("start",start))
+    app.add_handler(CommandHandler("ping",ping_cmd))
     app.add_handler(CommandHandler("admin",admin_cmd))
     app.add_handler(CommandHandler("forcejoin_add",forcejoin_add_cmd))
     app.add_handler(CommandHandler("forcejoin_remove",forcejoin_remove_cmd))
@@ -936,6 +940,7 @@ async def main():
     async def post_init(application):
         await application.bot.set_my_commands([
             ("start","🏰 Start Swiggy Palace"),
+            ("ping","⚡ Bot status"),
             ("admin","👑 Admin Panel"),
             ("feedback","⭐ Order Feedback")
         ])
