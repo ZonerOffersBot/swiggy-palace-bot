@@ -103,6 +103,9 @@ async def init_db():
         "ALTER TABLE payments ADD COLUMN qr_admin_id INTEGER",
         "ALTER TABLE payments ADD COLUMN qr_value TEXT",
         "ALTER TABLE payments ADD COLUMN qr_source TEXT DEFAULT 'assigned_admin'",
+        "ALTER TABLE users ADD COLUMN priority INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN priority_paid INTEGER DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN priority INTEGER DEFAULT 0",
     )
     for sql in migrations:
         try:
