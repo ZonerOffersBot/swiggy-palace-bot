@@ -592,78 +592,111 @@ async def admin_callback(q,context,data):
         kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_new"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
         await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data.startswith("orderview:"):
-        # Keep order-details rendering isolated: malformed legacy rows must never
-        # bubble into the global Temporary error handler.
-        oid=data.split(":",1)[1].strip()
+        oid = data.split(":", 1)[1].strip()
+        if not oid:
+            await q.message.reply_text("❌ Invalid Order ID.")
+            return
+
         try:
-            o=await db.get_order(oid)
+            o = await db.get_order(oid)
             if not o:
                 await q.message.reply_text("❌ Order not found.")
                 return
 
-            assigned_raw=o["assigned_admin"]
-            try:
-                assigned_id=int(assigned_raw) if assigned_raw not in (None,"","0") else None
-            except (TypeError,ValueError):
-                assigned_id=None
+            def val(key, default=""):
+                try:
+                    value = o[key]
+                except (KeyError, IndexError, TypeError):
+                    value = default
+                return default if value is None else value
 
-            if uid!=OWNER_ID and assigned_id is not None and assigned_id!=uid:
+            try:
+                assigned_id = int(val("assigned_admin", 0) or 0)
+            except (TypeError, ValueError):
+                assigned_id = 0
+
+            if uid != OWNER_ID and assigned_id and assigned_id != uid:
                 await q.message.reply_text("🔒 Ye order kisi aur Admin ko assigned hai.")
                 return
 
             try:
-                customer_id=int(o["customer_id"])
-            except (TypeError,ValueError):
-                customer_id=0
-            customer=await db.get_user(customer_id) if customer_id else None
-            assigned=await db.get_admin(assigned_id) if assigned_id else None
+                customer_id = int(val("customer_id", 0) or 0)
+            except (TypeError, ValueError):
+                customer_id = 0
+
+            customer = await db.get_user(customer_id) if customer_id else None
+            assigned = await db.get_admin(assigned_id) if assigned_id else None
+
+            from html import escape
+
+            def clean(value, fallback="-"):
+                value = fallback if value in (None, "") else value
+                return escape(str(value))
 
             def money(value):
                 try:
                     return f"{float(value or 0):.2f}"
-                except (TypeError,ValueError):
+                except (TypeError, ValueError):
                     return "0.00"
 
-            from html import escape
-            assigned_name=escape(str((assigned["display_name"] or assigned_id) if assigned else "Unassigned"))
-            public_id=escape(str(customer["public_id"])) if customer and customer["public_id"] else "-"
-            status=escape(str(o["status"] or "-"))
-            payment_status=escape(str(o["payment_status"] or "-"))
-            swiggy_order_id=escape(str(o["swiggy_order_id"])) if o["swiggy_order_id"] else "-"
-            address=escape(str(o["address_link"])) if o["address_link"] else "-"
-            cart=escape(str(o["cart_link"])) if o["cart_link"] else "-"
+            customer_name = clean(
+                (customer["first_name"] if customer else "") or
+                (customer["username"] if customer else "") or
+                customer_id or "Customer"
+            )
+            customer_public_id = clean(
+                customer["public_id"] if customer and customer["public_id"] else
+                f"TG-{customer_id}" if customer_id else "-"
+            )
+            assigned_name = clean(
+                assigned["display_name"] if assigned and assigned["display_name"] else
+                assigned_id if assigned_id else "Unassigned"
+            )
 
-            msg=(f"📦 <b>ORDER DETAILS</b>\\n\\n"
-                 f"🆔 <code>{escape(str(o['id']))}</code>\\n"
-                 f"👤 Customer: <code>{customer_id or '-'}</code>\\n"
-                 f"🪪 Customer ID: <code>{public_id}</code>\\n"
-                 f"👨‍💼 Assigned Admin: <b>{assigned_name}</b>\\n"
-                 f"📌 Status: <b>{status}</b>\\n"
-                 f"🍔 Swiggy Amount: ₹{money(o['swiggy_amount'])}\\n"
-                 f"🏰 Palace Charge: ₹{money(o['palace_charge'])}\\n"
-                 f"⭐ Priority Fee: ₹{money(o['priority_fee'])}\\n"
-                 f"💳 Total: ₹{money(o['total'])}\\n"
-                 f"💰 Payment: <b>{payment_status}</b>\\n"
-                 f"🧾 Swiggy Order ID: {swiggy_order_id}\\n\\n"
-                 f"📍 Address: {address}\\n"
-                 f"🛒 Cart: {cart}")
+            msg = (
+                "📦 <b>ORDER DETAILS</b>\\n\\n"
+                f"🆔 Order ID: <code>{clean(val('id', oid))}</code>\\n"
+                f"👤 Customer: <b>{customer_name}</b> (<code>{customer_public_id}</code>)\\n"
+                f"🆔 Telegram ID: <code>{customer_id or '-'}</code>\\n"
+                f"👨‍💼 Assigned Admin/Seller: <b>{assigned_name}</b>\\n"
+                f"📌 Status: <b>{clean(val('status'))}</b>\\n"
+                f"🍔 Swiggy Amount: ₹{money(val('swiggy_amount', 0))}\\n"
+                f"🏰 Palace Charge: ₹{money(val('palace_charge', 0))}\\n"
+                f"⭐ Priority Fee: ₹{money(val('priority_fee', 0))}\\n"
+                f"💳 Total: ₹{money(val('total', 0))}\\n"
+                f"💰 Payment: <b>{clean(val('payment_status'))}</b>\\n"
+                f"🧾 Swiggy Order ID: {clean(val('swiggy_order_id'))}\\n\\n"
+                f"📍 Address: {clean(val('address_link'))}\\n"
+                f"🛒 Cart: {clean(val('cart_link'))}"
+            )
 
-            try:
-                kb=order_actions(oid).inline_keyboard
-                kb.insert(0,[InlineKeyboardButton("👤 Open Customer",callback_data=f"userview:{customer_id}")])
-                markup=InlineKeyboardMarkup(kb)
-            except Exception:
-                log.exception("Failed to build order action keyboard for %s",oid)
-                markup=None
-
-            await q.message.reply_text(msg,parse_mode="HTML",reply_markup=markup)
+            buttons = [
+                [InlineKeyboardButton("👤 Open Customer", callback_data=f"userview:{customer_id}")] if customer_id else [],
+                [InlineKeyboardButton("💳 Payment", callback_data=f"pay:{oid}"),
+                 InlineKeyboardButton("📍 Request Address", callback_data=f"reqaddr:{oid}")],
+                [InlineKeyboardButton("🛒 Request Cart", callback_data=f"reqcart:{oid}")],
+                [InlineKeyboardButton("🧾 Set Swiggy Order ID", callback_data=f"setid:{oid}")],
+                [InlineKeyboardButton("💰 Set Final Price", callback_data=f"setprice:{oid}")],
+                [InlineKeyboardButton("✅ Mark Placed", callback_data=f"placed:{oid}"),
+                 InlineKeyboardButton("🏁 Complete", callback_data=f"complete:{oid}")],
+                [InlineKeyboardButton("↩️ Refund", callback_data=f"refund:{oid}")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="a_new")]
+            ]
+            buttons = [row for row in buttons if row]
+            await q.message.reply_text(
+                msg,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
         except Exception:
-            log.exception("Order details failed for %s",oid)
+            log.exception("Order details failed for order=%s user=%s", oid, uid)
             try:
-                await q.message.reply_text("⚠️ Order details load nahi ho paayi. Order data safe hai; please Refresh karke dobara try karein.")
+                await q.message.reply_text(
+                    "⚠️ Order details load nahi ho paayi. Please Refresh karke dobara try karein."
+                )
             except Exception:
                 pass
-    elif data.startswith("userview:"):
+elif data.startswith("userview:"):
         cid=int(data.split(":",1)[1])
         customer=await db.get_user(cid)
         if not customer:
