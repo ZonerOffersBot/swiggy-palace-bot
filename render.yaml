@@ -1,18 +1,20 @@
 services:
   - type: web
     name: swiggy-palace-bot
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: BOT_TOKEN
         sync: false
-      - key: ADMIN_IDS
-        sync: false
       - key: OWNER_ID
+        sync: false
+      - key: ADMIN_IDS
         sync: false
       - key: DATABASE_PATH
         value: palace.db
       - key: PORT
         value: 10000
+      - key: WEBHOOK_URL
+        sync: false
