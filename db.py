@@ -290,6 +290,13 @@ async def list_admins():
     db=await connect(); cur=await db.execute("SELECT * FROM admins WHERE active=1 ORDER BY id")
     rows=await cur.fetchall(); await db.close(); return rows
 
+async def list_all_admins():
+    db=await connect()
+    cur=await db.execute("SELECT * FROM admins ORDER BY active DESC, id")
+    rows=await cur.fetchall()
+    await db.close()
+    return rows
+
 async def get_admin(aid):
     db=await connect(); cur=await db.execute("SELECT * FROM admins WHERE id=?",(aid,))
     row=await cur.fetchone(); await db.close(); return row
