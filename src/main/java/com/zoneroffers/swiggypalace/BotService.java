@@ -79,12 +79,12 @@ public class BotService {
   return "📊 <b>Palace Stats</b>\n\n👥 Customers: "+s.get("customers")+"\n📦 Orders: "+s.get("orders")+"\n🏁 Completed: "+s.get("completed")+"\n⏳ Active: "+s.get("active")+"\n🍔 Swiggy Value: ₹"+String.format(Locale.US,"%.2f",((Number)s.get("swiggy")).doubleValue())+"\n💰 Palace Charges: ₹"+String.format(Locale.US,"%.2f",((Number)s.get("charges")).doubleValue())+"\n↩️ Refunds: ₹"+String.format(Locale.US,"%.2f",((Number)s.get("refunds")).doubleValue());
  }
  private String orders(String title,List<String>ids){return ids.isEmpty()?title+"\n\nNo orders found.":title+"\n\n"+String.join("\n",ids);}
- private String customerMenu(){return markup(List.of(row(button("🛒 Place New Order","new_order")),row(button("⭐ Become High Priority","priority")),row(button("📦 My Orders","my_orders"),button("👤 My Profile","profile")),row(button("🆘 Help & Support","help_support"))));}
+ private String customerMenu(){return markupRows(List.of(row(button("🛒 Place New Order","new_order")),row(button("⭐ Become High Priority","priority")),row(button("📦 My Orders","my_orders"),button("👤 My Profile","profile")),row(button("🆘 Help & Support","help_support"))));}
  private String adminMenu(){return markup(row(button("📥 New Orders","a_new"),button("💳 Payments","a_pay")),row(button("📥 Payment Receive","a_receive")),row(button("📦 Active Orders","a_active"),button("📊 Stats","a_stats")),row(button("👨‍💼 Admins","a_admins"),button("💰 Charges","a_charges")),row(button("🎫 Help & Support","a_support")),row(button("📢 Broadcast","a_broadcast")),row(button("🔎 Search ID","a_search")),row(button("📢 Force Join","a_forcejoin")),row(button("📷 Payment QR","a_qr"),button("⚙️ Settings","a_settings")));}
  private String back(){return markup(row(button("⬅️ Back","a_back")));}
  private Map<String,String> button(String text,String data){return Map.of("text",text,"callback_data",data);}
  @SafeVarargs private final List<Map<String,String>> row(Map<String,String>...b){return Arrays.asList(b);}
- private String markup(List<List<Map<String,String>>> rows){try{return mapper.writeValueAsString(Map.of("inline_keyboard",rows));}catch(Exception e){throw new RuntimeException(e);}}
+ private String markupRows(List<List<Map<String,String>>> rows){try{return mapper.writeValueAsString(Map.of("inline_keyboard",rows));}catch(Exception e){throw new RuntimeException(e);}}
  private String markup(List<Map<String,String>>...rows){try{return mapper.writeValueAsString(Map.of("inline_keyboard",Arrays.asList(rows)));}catch(Exception e){throw new RuntimeException(e);}}
  private void send(long chat,String text,String markup){try{tg.sendMessage(chat,text,markup);}catch(Exception e){log.error("sendMessage failed chat={}",chat,e);}}
 }
