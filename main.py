@@ -953,6 +953,25 @@ async def admin_callback(q,context,data):
         oid=data.split(":")[1]; o=await db.get_order(oid); dbx=await db.connect()
         await dbx.execute("INSERT OR IGNORE INTO refunds(order_id,amount,reason,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",(oid,o["total"],"Admin requested", "pending",db.now(),db.now())); await dbx.commit(); await dbx.close()
         await db.update_order(oid,status="refund_pending"); await q.message.reply_text(f"↩️ Refund Pending for {oid}. Manual refund required.")
+    elif data.startswith("track:"):
+        if not await is_admin(uid):
+            return
+        oid=data.split(":",1)[1].strip()
+        o=await db.get_order(oid)
+        if not o:
+            await q.message.reply_text("❌ Order not found.")
+            return
+        if uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid:
+            await q.message.reply_text("🔒 Sirf assigned Admin ya Super Admin tracking link set kar sakta hai.")
+            return
+        state[uid]={"action":"tracking_link","oid":oid}
+        await q.message.reply_text(
+            f"🔗 <b>{oid} TRACK LINK</b>\n\n"
+            "Tracking URL bhejo.\n"
+            "❌ Cancel: /cancel",
+            parse_mode="HTML"
+        )
+        return
     elif data.startswith("reqaddr:") or data.startswith("reqcart:"):
         oid=data.split(":")[1]; kind="address" if data.startswith("reqaddr") else "cart"; o=await db.get_order(oid)
         state[o["customer_id"]]={"action":kind,"oid":oid}; await q.message.reply_text(f"📨 Customer asked for a new {kind} link.")
