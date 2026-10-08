@@ -25,6 +25,7 @@ def mini_admin_menu():
 def admin_menu():
     return InlineKeyboardMarkup([
       [InlineKeyboardButton("📥 New Orders",callback_data="a_new"),InlineKeyboardButton("💳 Payments",callback_data="a_pay")],
+      [InlineKeyboardButton("📚 Order History",callback_data="a_order_history"),InlineKeyboardButton("💳 Payment History",callback_data="a_payment_history")],
       [InlineKeyboardButton("📥 Payment Receive",callback_data="a_receive")],
       [InlineKeyboardButton("📦 Active Orders",callback_data="a_active"),InlineKeyboardButton("📊 Stats",callback_data="a_stats")],
       [InlineKeyboardButton("👨‍💼 Admins",callback_data="a_admins"),InlineKeyboardButton("🏪 Sellers",callback_data="a_sellers")],
