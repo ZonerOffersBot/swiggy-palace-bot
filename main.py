@@ -196,9 +196,11 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         return
     if data.startswith("seller_approve:") or data.startswith("seller_reject:"):
         if uid!=OWNER_ID: return
-        sid=int(data.split(":",1)[1]); ok=data.startswith("seller_approve:")
-        rid=int(data.split(":",2)[1]) if data.count(":")>1 else 0
-        await db.review_seller_request(rid, "approved" if ok else "rejected", uid) if rid else None
+        parts=data.split(":")
+        sid=int(parts[1]); rid=int(parts[2]) if len(parts)>2 else 0
+        ok=data.startswith("seller_approve:")
+        if rid:
+            await db.review_seller_request(rid, "approved" if ok else "rejected", uid)
         await db.set_setting("seller_status_"+str(sid),"approved" if ok else "rejected")
         if ok:
             seller_user = await db.get_user(sid)
@@ -539,12 +541,12 @@ async def submit_seller_application(target,context):
     uid=target.from_user.id if hasattr(target,"from_user") else target.effective_user.id
     s=state.get(uid,{})
     data=s.get("data",{})
-    await db.create_seller_request(uid,data)
+    request_id=await db.create_seller_request(uid,data)
     pid=await db.assign_public_id(uid,"seller")
     msg=(f"🏪 <b>NEW SELLER APPLICATION</b>\n\n🪪 Seller ID: <code>{pid}</code>\n🆔 Telegram ID: <code>{uid}</code>\n"
          f"👤 Name: {data.get('full_name','-')}\n📱 Phone: {data.get('phone','-')}\n📍 City: {data.get('city','-')}\n"
          f"💼 Experience: {data.get('experience','-')}\n💳 UPI: {data.get('upi','-')}\n🏪 Business: {data.get('business','-')}")
-    kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve Seller",callback_data=f"seller_approve:{uid}"),InlineKeyboardButton("❌ Reject",callback_data=f"seller_reject:{uid}")]])
+    kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve Seller",callback_data=f"seller_approve:{uid}:{request_id}"),InlineKeyboardButton("❌ Reject",callback_data=f"seller_reject:{uid}:{request_id}")]])
     try: await context.bot.send_message(OWNER_ID,msg,parse_mode="HTML",reply_markup=kb)
     except Exception as e: log.warning("Seller notification failed: %s",e)
     state.pop(uid,None)
