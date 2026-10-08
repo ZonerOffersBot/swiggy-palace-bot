@@ -27,7 +27,7 @@ def admin_menu():
       [InlineKeyboardButton("📥 New Orders",callback_data="a_new"),InlineKeyboardButton("💳 Payments",callback_data="a_pay")],
       [InlineKeyboardButton("📥 Payment Receive",callback_data="a_receive")],
       [InlineKeyboardButton("📦 Active Orders",callback_data="a_active"),InlineKeyboardButton("📊 Stats",callback_data="a_stats")],
-      [InlineKeyboardButton("👨‍💼 Admins",callback_data="a_admins"),InlineKeyboardButton("💰 Charges",callback_data="a_charges")],
+      [InlineKeyboardButton("👨‍💼 Admins",callback_data="a_admins"),InlineKeyboardButton("🏪 Sellers",callback_data="a_sellers")],
       [InlineKeyboardButton("🎫 Help & Support",callback_data="a_support")],
       [InlineKeyboardButton("📢 Broadcast",callback_data="a_broadcast")],
       [InlineKeyboardButton("🔎 Search ID",callback_data="a_search")],
