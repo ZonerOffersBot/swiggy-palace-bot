@@ -281,8 +281,14 @@ async def verify_second_order_unlock(customer_id, admin_id, ok):
     await db.commit(); await db.close()
 
 async def consume_second_order_unlock(customer_id):
+    # Preserve the payment/unlock audit record permanently. Do not delete
+    # customer financial/order history during normal bot operation.
     db=await connect()
-    await db.execute("DELETE FROM second_order_unlocks WHERE customer_id=? AND status='verified'",(customer_id,))
+    await db.execute(
+        "UPDATE second_order_unlocks SET status='consumed',updated_at=? "
+        "WHERE customer_id=? AND status='verified'",
+        (now(),customer_id)
+    )
     await db.commit(); await db.close()
 
 async def has_unfinished_order(customer_id):
