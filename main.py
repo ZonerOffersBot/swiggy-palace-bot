@@ -528,7 +528,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
             await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
         except Exception:
             await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
-    elif data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
+    elif data.startswith("orderview:") or data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
         await admin_callback(q,context,data)
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
         await admin_priority_callback(q,data)
