@@ -1109,18 +1109,34 @@ async def admin_priority_callback(q,data):
     customer=await db.get_user(uid)
     cname=(customer["first_name"] if customer else "") or (customer["username"] if customer else "") or f"Telegram {uid}"
     try:
-        await context.bot.send_message(
-            uid,
-            (
+        if ok:
+            customer_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛒 Place New Order", callback_data="new_order")],
+                [InlineKeyboardButton("📦 My Orders", callback_data="my_orders")]
+            ])
+            customer_msg = (
                 "⭐ <b>HIGH PRIORITY ACTIVE</b>\n\n"
                 "Aapka High Priority payment verify ho gaya hai.\n"
-                "Aapka order faster processing queue me hai."
-                if ok else
+                "Ab aap directly order place kar sakte hain."
+            )
+        else:
+            customer_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⭐ Try High Priority Again", callback_data="priority")],
+                [InlineKeyboardButton("🏠 Main Menu", callback_data="start_roles")]
+            ])
+            customer_msg = (
                 "❌ <b>HIGH PRIORITY PAYMENT REJECTED</b>\n\n"
                 "Payment verify nahi hua. Please assigned Admin se contact karein."
-            ),
-            parse_mode="HTML"
-        )
+            )
+        try:
+            await context.bot.send_message(
+                uid,
+                customer_msg,
+                parse_mode="HTML",
+                reply_markup=customer_kb
+            )
+        except Exception:
+            log.exception("Failed to send priority result to customer=%s", uid)
     except Exception:
         pass
     await q.message.reply_text(
