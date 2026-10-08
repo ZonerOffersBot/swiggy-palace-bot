@@ -669,13 +669,26 @@ async def admin_callback(q,context,data):
             kb=[[InlineKeyboardButton(f"🆔 {x['id']} • {x['status']}",callback_data=f"orderview:{x['id']}")] for x in rows]
             await q.message.reply_text("📥 <b>MY ORDERS</b>" if data=="m_new" else "📦 <b>ACTIVE ORDERS</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_new":
-        dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status IN ('new','address_received','cart_received','screenshot_received','price_confirmed') ORDER BY priority DESC,created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
+        dbx=await db.connect()
+        # Never hide valid orders merely because their workflow status changed.
+        # Admins should be able to open the order details until it is explicitly
+        # completed/cancelled/refunded.
+        cur=await dbx.execute(
+            "SELECT id FROM orders WHERE status NOT IN ('completed','cancelled','refund_completed') "
+            "ORDER BY priority DESC,created_at ASC LIMIT 50"
+        )
+        rows=await cur.fetchall()
+        await dbx.close()
         if not rows:
             await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nNo new orders.",parse_mode="HTML"); return
         kb=[[InlineKeyboardButton(f"🆔 {o['id']}",callback_data=f"orderview:{o['id']}")] for o in rows]
         kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_new"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
         await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data.startswith("orderview:"):
+        try:
+            await q.answer()
+        except Exception:
+            pass
         oid = data.split(":", 1)[1].strip()
         if not oid:
             await q.message.reply_text("❌ Invalid Order ID.")
