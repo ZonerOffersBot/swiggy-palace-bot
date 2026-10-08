@@ -196,6 +196,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN priority INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN priority_paid INTEGER DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN priority INTEGER DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN tracking_link TEXT DEFAULT '\"",
     )
     for sql in migrations:
         try:
