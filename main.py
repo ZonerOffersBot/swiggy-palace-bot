@@ -209,17 +209,28 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         await q.message.reply_text(f"⭐ Rating: {rating}/5\n\n📝 Short review bhejo ya /skip.")
         return
     if data=="become_customer":
-        await db.assign_public_id(uid,"customer")
-        await q.message.edit_text(
-          "🛒 <b>BECOME A CUSTOMER</b>\n\n"
-          "🍔 Swiggy food ko simple manual ordering support ke saath order karein.\n"
-          "💸 Low-price food offers/order support\n"
-          "🛡️ Safe & reliable process\n"
-          "📍 Address + cart + screenshot share karein\n"
-          "💳 Final amount verify hone ke baad payment karein\n"
-          "👨‍💼 Order Palace Admin manually place karega\n\n"
-          "👇 Customer menu:",
-          parse_mode="HTML",reply_markup=main_menu())
+        try:
+            await db.upsert_user(q.from_user)
+            await db.assign_public_id(uid,"customer")
+        except Exception:
+            log.exception("Failed to initialize customer profile uid=%s", uid)
+            await q.message.reply_text("⚠️ Customer profile initialize nahi ho paaya. Please try again.")
+            return
+        customer_text=(
+            "🛒 <b>BECOME A CUSTOMER</b>\n\n"
+            "🍔 Swiggy food ko simple manual ordering support ke saath order karein.\n"
+            "💸 Low-price food offers/order support\n"
+            "🛡️ Safe & reliable process\n"
+            "📍 Address + cart + screenshot share karein\n"
+            "💳 Final amount verify hone ke baad payment karein\n"
+            "👨‍💼 Order Palace Admin manually place karega\n\n"
+            "👇 Customer menu:"
+        )
+        try:
+            await q.message.edit_text(customer_text,parse_mode="HTML",reply_markup=main_menu())
+        except Exception:
+            log.exception("Customer menu edit failed uid=%s", uid)
+            await q.message.reply_text(customer_text,parse_mode="HTML",reply_markup=main_menu())
         return
     if data=="become_seller":
         state[uid]={"action":"seller_form","step":0,"data":{}}
