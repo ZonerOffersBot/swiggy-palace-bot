@@ -312,8 +312,10 @@ async def list_seller_requests(status=None):
 
 async def create_seller_request(user_id, data):
     db=await connect()
-    await db.execute("INSERT INTO seller_requests(user_id,full_name,phone,city,experience,upi,business,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(user_id,data.get('full_name',''),data.get('phone',''),data.get('city',''),data.get('experience',''),data.get('upi',''),data.get('business',''),'pending',now(),now()))
+    cur=await db.execute("INSERT INTO seller_requests(user_id,full_name,phone,city,experience,upi,business,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(user_id,data.get('full_name',''),data.get('phone',''),data.get('city',''),data.get('experience',''),data.get('upi',''),data.get('business',''),'pending',now(),now()))
+    rid=cur.lastrowid
     await db.commit(); await db.close()
+    return int(rid)
 
 async def review_seller_request(request_id, status, reviewer_id):
     db=await connect()
