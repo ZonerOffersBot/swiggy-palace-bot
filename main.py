@@ -899,7 +899,13 @@ async def error(update,context):
         if update and update.effective_message: await update.effective_message.reply_text("⚠️ Temporary error. Please try again.")
     except: pass
 
-async def health(request): return PlainTextResponse("OK")
+telegram_ready=False
+polling_active=False
+
+async def health(request):
+    if not (telegram_ready and polling_active):
+        return PlainTextResponse("NOT READY", status_code=503)
+    return PlainTextResponse("OK")
 
 async def main():
     if not BOT_TOKEN:
@@ -953,16 +959,23 @@ async def main():
     health_task=asyncio.create_task(server.serve())
 
     try:
+        global telegram_ready, polling_active
+        telegram_ready=False
+        polling_active=False
         await app.initialize()
         me=await app.bot.get_me()
         log.info("Telegram bot connected as @%s (%s)", me.username, me.id)
+        await app.bot.delete_webhook(drop_pending_updates=False)
+        log.info("Telegram webhook cleared; using long polling")
         await post_init(app)
         await app.start()
         log.info("Starting Telegram polling...")
         await app.updater.start_polling(
-            drop_pending_updates=True,
+            drop_pending_updates=False,
             allowed_updates=Update.ALL_TYPES
         )
+        polling_active=True
+        telegram_ready=True
         log.info("Telegram polling is ACTIVE; bot is ready for messages and buttons")
 
         # Keep main alive while polling and health server run.
