@@ -133,7 +133,8 @@ async def connect():
 PROTECTED_TABLES = (
     "users", "orders", "payments", "priority_payments", "refunds",
     "tickets", "ticket_messages", "settings", "admins", "seller_requests",
-    "audit_log", "customer_admins", "second_order_unlocks"
+    "audit_log", "customer_admins", "second_order_unlocks",
+    "second_order_unlock_history"
 )
 
 async def backup_database(reason="startup"):
