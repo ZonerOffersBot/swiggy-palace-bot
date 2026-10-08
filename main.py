@@ -178,7 +178,15 @@ async def seller_entry_callback(update:Update,context:ContextTypes.DEFAULT_TYPE)
     )
 
 async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
-    q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
+    q=update.callback_query
+    # A stale Telegram callback must never abort the actual button action.
+    # Answer is best-effort; the handler below remains the source of truth.
+    try:
+        await q.answer()
+    except Exception:
+        log.warning("Callback answer failed; continuing data=%s", getattr(q,"data",None))
+    uid=q.from_user.id
+    data=q.data
     if data=="force_join_check":
         if await force_join_required(uid):
             await q.message.reply_text("❌ Pehle @Swiggypalace channel join karein, phir ✅ I Joined dabayein.")
@@ -696,10 +704,6 @@ async def admin_callback(q,context,data):
         kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_new"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
         await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data.startswith("orderview:"):
-        try:
-            await q.answer()
-        except Exception:
-            pass
         oid = data.split(":", 1)[1].strip()
         if not oid:
             await q.message.reply_text("❌ Invalid Order ID.")
