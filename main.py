@@ -316,7 +316,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif data=="help_support" or data=="ticket":
         state[uid]={"action":"ticket_subject"}
         await q.message.reply_text("🆘 <b>Help & Support</b>\n\nApni query/problem ek message me likho.\nAapki query Ticket ID aur unique ID ke saath Owner ko milegi.",parse_mode="HTML")
-    elif data.startswith("orderview:") or data.startswith("userview:"):
+    elif data.startswith("userview:"):
         await admin_callback(q,context,data)
     elif data=="qr_upload":
         if uid!=OWNER_ID:
