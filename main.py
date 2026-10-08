@@ -282,28 +282,94 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         try: await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
         except Exception: await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
     elif data=="priority":
-        fee=float(await db.setting("priority_fee","49"))
-        aid=await db.assign_customer_admin(uid)
-        qr,_=await db.payment_qr_for(uid)
-        if not qr:
-            await q.message.reply_text(
-              "⭐ <b>High Priority</b>\n\n"
-              f"💰 Advance: ₹{fee:.0f}\n"
-              "⚠️ Payment QR abhi configured nahi hai. Admin QR set hone ke baad payment start hoga.",
-              parse_mode="HTML")
-            return
-        state[uid]={"action":"priority_utr","fee":fee,"admin_id":aid}
-        msg=(f"⭐ <b>HIGH PRIORITY</b>\n\n💰 Advance: ₹{fee:.0f}\n"
-             f"⏱️ Assignment SLA: {await db.setting('priority_sla_minutes','5')} min\n"
-             "⚠️ Priority means faster processing, not a guaranteed instant order.\n\n"
-             "1️⃣ <b>QR par payment karo</b>\n"
-             "2️⃣ Payment ka <b>UTR number</b> bhejo\n"
-             "3️⃣ Uske baad <b>payment screenshot</b> upload karo.\n\n"
-             "🔒 Screenshot sirf aapke assigned Palace Admin ko jayega.")
+        # High Priority must never crash the callback. Keep this flow idempotent
+        # and isolate DB/QR errors so the global handler cannot swallow the reply.
         try:
-            await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
+            user_row = await db.get_user(uid)
+            if not user_row:
+                await db.upsert_user(q.from_user)
+
+            # If priority is already active, do not ask the customer to pay again.
+            user_row = await db.get_user(uid)
+            if user_row and int(user_row["priority"] or 0) == 1 and int(user_row["priority_paid"] or 0) == 1:
+                await q.message.reply_text(
+                    "⭐ <b>HIGH PRIORITY ACTIVE</b>\n\n"
+                    "Aapka High Priority already active hai. Dobara payment ki zarurat nahi hai.",
+                    parse_mode="HTML"
+                )
+                return
+
+            try:
+                fee = float(await db.setting("priority_fee","49") or 49)
+            except (TypeError, ValueError):
+                fee = 49.0
+
+            try:
+                sla = str(await db.setting("priority_sla_minutes","5") or "5").strip()
+            except Exception:
+                sla = "5"
+
+            # Always ensure the customer has an assigned Admin before showing payment.
+            aid = await db.assign_customer_admin(uid)
+            if not aid:
+                await q.message.reply_text(
+                    "⚠️ <b>High Priority temporarily unavailable.</b>\n\n"
+                    "Koi Palace Admin assigned nahi hai. Please contact Support.",
+                    parse_mode="HTML"
+                )
+                return
+
+            qr, qr_aid = await db.payment_qr_for(uid)
+            qr_aid = int(qr_aid or aid)
+
+            if not qr:
+                await q.message.reply_text(
+                    "⭐ <b>HIGH PRIORITY</b>\n\n"
+                    f"💰 Advance: ₹{fee:.0f}\n"
+                    f"⏱️ Assignment SLA: {sla} min\n\n"
+                    "⚠️ Payment QR abhi configured nahi hai.\n"
+                    "Admin Panel → 📷 Payment QR se assigned Admin ka QR set karein.",
+                    parse_mode="HTML"
+                )
+                return
+
+            state[uid]={
+                "action":"priority_utr",
+                "fee":fee,
+                "admin_id":qr_aid,
+                "qr_admin_id":qr_aid,
+                "qr_value":qr,
+                "qr_source":"assigned_admin"
+            }
+
+            msg=(
+                f"⭐ <b>HIGH PRIORITY</b>\n\n"
+                f"💰 Advance: ₹{fee:.0f}\n"
+                f"⏱️ Assignment SLA: {sla} min\n"
+                "⚠️ Priority means faster processing, not a guaranteed instant order.\n\n"
+                "1️⃣ <b>QR par payment karo</b>\n"
+                "2️⃣ Payment ka <b>UTR number</b> bhejo\n"
+                "3️⃣ Uske baad <b>payment screenshot</b> upload karo.\n\n"
+                "🔒 Screenshot sirf aapke assigned Palace Admin ko jayega."
+            )
+
+            try:
+                await q.message.reply_photo(qr, caption=msg, parse_mode="HTML")
+            except Exception:
+                # Some old/invalid QR values are not Telegram file IDs.
+                await q.message.reply_text(
+                    msg + f"\n\n🔳 QR: {qr}",
+                    parse_mode="HTML"
+                )
         except Exception:
-            await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
+            log.exception("High Priority callback failed for user=%s", uid)
+            state.pop(uid, None)
+            try:
+                await q.message.reply_text(
+                    "⚠️ High Priority open nahi ho paayi. Please tap ⭐ High Priority again."
+                )
+            except Exception:
+                pass
     elif data=="my_orders":
         dbx=await db.connect(); cur=await dbx.execute(
             "SELECT id,status,total,swiggy_order_id,updated_at FROM orders WHERE customer_id=? ORDER BY created_at DESC LIMIT 10",
