@@ -1,6 +1,6 @@
 import asyncio, logging, os, json
 from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, JSONResponse
 from starlette.routing import Route
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -903,9 +903,23 @@ telegram_ready=False
 polling_active=False
 
 async def health(request):
-    if not (telegram_ready and polling_active):
+    if not telegram_ready:
         return PlainTextResponse("NOT READY", status_code=503)
     return PlainTextResponse("OK")
+
+async def telegram_webhook(request):
+    if request.method != "POST":
+        return PlainTextResponse("Method Not Allowed", status_code=405)
+    try:
+        payload = await request.json()
+        update = Update.de_json(payload, app_global.bot)
+        if update is not None:
+            await app_global.update_queue.put(update)
+        return JSONResponse({"ok": True})
+    except Exception:
+        log.exception("Webhook update handling failed")
+        # Return 200 so Telegram does not create a retry storm for malformed/duplicate deliveries.
+        return JSONResponse({"ok": True})
 
 async def main():
     if not BOT_TOKEN:
@@ -951,10 +965,13 @@ async def main():
             ("feedback","⭐ Order Feedback")
         ])
 
-    # Start the HTTP health server independently so Render can see a live process
-    # even while Telegram polling is connecting/reconnecting.
+    # Run Telegram and the Render HTTP server in one process using webhook delivery.
+    # This eliminates competing getUpdates pollers and the Telegram 409 Conflict problem.
     from uvicorn import Config, Server
-    web=Starlette(routes=[Route("/health",health)])
+    web=Starlette(routes=[
+        Route("/health",health, methods=["GET"]),
+        Route("/telegram/webhook",telegram_webhook, methods=["POST"])
+    ])
     server=Server(Config(web,host="0.0.0.0",port=PORT,log_level="info"))
     health_task=asyncio.create_task(server.serve())
 
@@ -965,30 +982,35 @@ async def main():
         await app.initialize()
         me=await app.bot.get_me()
         log.info("Telegram bot connected as @%s (%s)", me.username, me.id)
-        await app.bot.delete_webhook(drop_pending_updates=False)
-        log.info("Telegram webhook cleared; using long polling")
+
         await post_init(app)
         await app.start()
-        log.info("Starting Telegram polling...")
-        await app.updater.start_polling(
-            drop_pending_updates=False,
-            allowed_updates=Update.ALL_TYPES
+
+        webhook_base = os.getenv("WEBHOOK_URL", "").strip().rstrip("/")
+        if not webhook_base:
+            webhook_base = os.getenv("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
+        if not webhook_base:
+            raise RuntimeError("WEBHOOK_URL or RENDER_EXTERNAL_URL is required for webhook mode")
+
+        webhook_url = webhook_base + "/telegram/webhook"
+        await app.bot.set_webhook(
+            url=webhook_url,
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=False
         )
         polling_active=True
         telegram_ready=True
-        log.info("Telegram polling is ACTIVE; bot is ready for messages and buttons")
+        log.info("Telegram webhook is ACTIVE: %s", webhook_url)
 
-        # Keep main alive while polling and health server run.
         await asyncio.Event().wait()
     except Exception:
         log.exception("Telegram bot startup/runtime failure")
         raise
     finally:
         try:
-            if app.updater and app.updater.running:
-                await app.updater.stop()
+            await app.bot.delete_webhook(drop_pending_updates=False)
         except Exception:
-            log.exception("Failed to stop Telegram updater cleanly")
+            log.exception("Failed to clear Telegram webhook cleanly")
         try:
             if app.running:
                 await app.stop()
