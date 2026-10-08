@@ -283,16 +283,25 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         try: await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
         except Exception: await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
     elif data=="priority":
-        # High Priority must never crash the callback. Keep this flow idempotent
-        # and isolate DB/QR errors so the global handler cannot swallow the reply.
+        # Hardened High Priority flow: never expose a generic temporary error.
         try:
+            await db.upsert_user(q.from_user)
             user_row = await db.get_user(uid)
-            if not user_row:
-                await db.upsert_user(q.from_user)
 
-            # If priority is already active, do not ask the customer to pay again.
-            user_row = await db.get_user(uid)
-            if user_row and int(user_row["priority"] or 0) == 1 and int(user_row["priority_paid"] or 0) == 1:
+            # Legacy SQLite databases may not have the optional priority fields.
+            priority_active = 0
+            priority_paid = 0
+            if user_row:
+                try:
+                    priority_active = int(user_row["priority"] or 0)
+                except Exception:
+                    priority_active = 0
+                try:
+                    priority_paid = int(user_row["priority_paid"] or 0)
+                except Exception:
+                    priority_paid = 0
+
+            if priority_active == 1 and priority_paid == 1:
                 await q.message.reply_text(
                     "⭐ <b>HIGH PRIORITY ACTIVE</b>\n\n"
                     "Aapka High Priority already active hai. Dobara payment ki zarurat nahi hai.",
@@ -301,27 +310,32 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
                 return
 
             try:
-                fee = float(await db.setting("priority_fee","49") or 49)
-            except (TypeError, ValueError):
+                fee = float(await db.setting("priority_fee", "49") or 49)
+            except Exception:
                 fee = 49.0
 
             try:
-                sla = str(await db.setting("priority_sla_minutes","5") or "5").strip()
+                sla = str(await db.setting("priority_sla_minutes", "5") or "5").strip()
             except Exception:
                 sla = "5"
 
-            # Always ensure the customer has an assigned Admin before showing payment.
-            aid = await db.assign_customer_admin(uid)
+            aid = await db.get_customer_admin(uid)
+            if not aid:
+                aid = await db.assign_customer_admin(uid)
             if not aid:
                 await q.message.reply_text(
-                    "⚠️ <b>High Priority temporarily unavailable.</b>\n\n"
-                    "Koi Palace Admin assigned nahi hai. Please contact Support.",
+                    "⚠️ <b>High Priority temporarily unavailable</b>\n\n"
+                    "Abhi koi active Palace Admin available nahi hai.",
                     parse_mode="HTML"
                 )
                 return
 
-            qr, qr_aid = await db.payment_qr_for(uid)
-            qr_aid = int(qr_aid or aid)
+            try:
+                qr, qr_aid = await db.payment_qr_for(uid)
+                qr_aid = int(qr_aid or aid)
+            except Exception:
+                log.exception("Priority QR lookup failed for user=%s", uid)
+                qr, qr_aid = "", int(aid)
 
             if not qr:
                 await q.message.reply_text(
@@ -334,40 +348,35 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            state[uid]={
-                "action":"priority_utr",
-                "fee":fee,
-                "admin_id":qr_aid,
-                "qr_admin_id":qr_aid,
-                "qr_value":qr,
-                "qr_source":"assigned_admin"
+            state[uid] = {
+                "action": "priority_utr",
+                "fee": fee,
+                "admin_id": qr_aid,
+                "qr_admin_id": qr_aid,
+                "qr_value": qr,
+                "qr_source": "assigned_admin"
             }
 
-            msg=(
+            msg = (
                 f"⭐ <b>HIGH PRIORITY</b>\n\n"
                 f"💰 Advance: ₹{fee:.0f}\n"
-                f"⏱️ Assignment SLA: {sla} min\n"
+                f"⏱️ Assignment SLA: {sla} min\n\n"
                 "⚠️ Priority means faster processing, not a guaranteed instant order.\n\n"
                 "1️⃣ <b>QR par payment karo</b>\n"
                 "2️⃣ Payment ka <b>UTR number</b> bhejo\n"
                 "3️⃣ Uske baad <b>payment screenshot</b> upload karo.\n\n"
                 "🔒 Screenshot sirf aapke assigned Palace Admin ko jayega."
             )
-
             try:
                 await q.message.reply_photo(qr, caption=msg, parse_mode="HTML")
             except Exception:
-                # Some old/invalid QR values are not Telegram file IDs.
-                await q.message.reply_text(
-                    msg + f"\n\n🔳 QR: {qr}",
-                    parse_mode="HTML"
-                )
-        except Exception:
-            log.exception("High Priority callback failed for user=%s", uid)
+                await q.message.reply_text(msg + f"\n\n🔳 QR: {qr}", parse_mode="HTML")
+        except Exception as exc:
+            log.exception("High Priority callback failed for user=%s: %s", uid, exc)
             state.pop(uid, None)
             try:
                 await q.message.reply_text(
-                    "⚠️ High Priority open nahi ho paayi. Please tap ⭐ High Priority again."
+                    "⚠️ High Priority abhi open nahi ho paayi. Please dobara ⭐ High Priority dabayein."
                 )
             except Exception:
                 pass
@@ -694,6 +703,15 @@ async def admin_callback(q,context,data):
             customer = await db.get_user(customer_id) if customer_id else None
             assigned = await db.get_admin(assigned_id) if assigned_id else None
 
+            # Resolve the latest Telegram profile too, so admin order details
+            # still show the customer's name when the local DB has old/missing data.
+            telegram_customer = None
+            if customer_id:
+                try:
+                    telegram_customer = await context.bot.get_chat(customer_id)
+                except Exception:
+                    telegram_customer = None
+
             from html import escape
 
             def clean(value, fallback="-"):
@@ -709,6 +727,8 @@ async def admin_callback(q,context,data):
             customer_name = clean(
                 (customer["first_name"] if customer else "") or
                 (customer["username"] if customer else "") or
+                (getattr(telegram_customer, "first_name", "") if telegram_customer else "") or
+                (getattr(telegram_customer, "username", "") if telegram_customer else "") or
                 customer_id or "Customer"
             )
             customer_public_id = clean(
