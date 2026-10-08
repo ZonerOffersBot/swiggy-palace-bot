@@ -814,7 +814,7 @@ async def approve_payment(q,oid,ok):
     customer = await db.get_user(int(o["customer_id"]))
     assigned_admin_row = await db.get_admin(assigned) if assigned else None
     customer_name = ((customer["first_name"] if customer else "") or "Customer").strip()
-    customer_uid = (customer["public_id"] if customer else None) or f"TG-{o["customer_id"]}"
+    customer_uid = (customer["public_id"] if customer else None) or f"TG-{o['customer_id']}"
     seller_name = ((assigned_admin_row["display_name"] if assigned_admin_row else "") or "Assigned Seller").strip()
     seller_uid = f"SP-SELL-{assigned:04d}" if assigned else "SP-SELL-UNASSIGNED"
 
