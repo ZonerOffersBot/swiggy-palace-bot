@@ -1133,6 +1133,36 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
     if not s: return
     action=s["action"]; oid=s.get("oid")
+    if action=="tracking_link":
+        if not await is_admin(uid):
+            state.pop(uid,None)
+            return
+        link=text.strip()
+        if not (link.startswith("http://") or link.startswith("https://")):
+            await update.message.reply_text("❌ Valid tracking URL bhejo.")
+            return
+        o=await db.get_order(oid)
+        if not o:
+            state.pop(uid,None)
+            await update.message.reply_text("❌ Order not found.")
+            return
+        if uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid:
+            state.pop(uid,None)
+            await update.message.reply_text("🔒 Sirf assigned Admin tracking link set kar sakta hai.")
+            return
+        await db.update_order(oid,tracking_link=link)
+        state.pop(uid,None)
+        await update.message.reply_text(f"🔗 <b>Tracking link saved</b>\n🆔 {oid}",parse_mode="HTML")
+        try:
+            await context.bot.send_message(
+                o["customer_id"],
+                f"📦 <b>Order Tracking Available</b>\n\n🆔 Order: <code>{oid}</code>\nAapka tracking link ready hai.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Track Order",url=link)]])
+            )
+        except Exception:
+            log.exception("Failed to send tracking link to customer oid=%s",oid)
+        return
     if action=="admin_search":
         if not await is_admin(uid): return
         state.pop(uid,None)
