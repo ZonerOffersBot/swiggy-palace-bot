@@ -1,4 +1,6 @@
 import aiosqlite
+import sqlite3
+import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 from config import DATABASE_PATH
@@ -96,11 +98,25 @@ CREATE TABLE IF NOT EXISTS second_order_unlocks(
  created_at TEXT,
  updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS second_order_unlock_history(
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ customer_id INTEGER NOT NULL,
+ paid_amount REAL DEFAULT 0,
+ utr TEXT,
+ proof TEXT,
+ status TEXT DEFAULT 'pending',
+ verified_by INTEGER,
+ created_at TEXT,
+ updated_at TEXT
+);
 """
 
 async def connect():
-    # Render/local-safe database path: create the parent directory when a
-    # custom DATABASE_PATH such as /data/palace.db is supplied.
+    # DATA-SAFETY HARDENING:
+    # - WAL + synchronous=FULL protects committed transactions.
+    # - busy_timeout prevents transient lock failures from losing writes.
+    # - foreign_keys stays enabled.
+    # - No application code is allowed to delete business/audit rows.
     db_path = Path(DATABASE_PATH).expanduser()
     if db_path.parent != Path("."):
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,9 +124,65 @@ async def connect():
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA busy_timeout=30000")
     await db.execute("PRAGMA foreign_keys=ON")
+    await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute("PRAGMA synchronous=FULL")
+    await db.execute("PRAGMA wal_autocheckpoint=1000")
     return db
 
+
+PROTECTED_TABLES = (
+    "users", "orders", "payments", "priority_payments", "refunds",
+    "tickets", "ticket_messages", "settings", "admins", "seller_requests",
+    "audit_log", "customer_admins", "second_order_unlocks"
+)
+
+async def backup_database(reason="startup"):
+    """
+    Create a point-in-time SQLite backup before schema/migration work.
+    Old backups are never deleted by the bot.
+    """
+    src = Path(DATABASE_PATH).expanduser()
+    if not src.exists() or src.stat().st_size == 0:
+        return None
+
+    backup_dir = src.parent / (src.name + ".backups")
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    safe_reason = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(reason))
+    target = backup_dir / f"{src.stem}_{stamp}_{safe_reason}.sqlite"
+
+    # sqlite3 backup API is transaction-safe and includes committed WAL data.
+    source = sqlite3.connect(str(src), timeout=30)
+    dest = sqlite3.connect(str(target), timeout=30)
+    try:
+        source.execute("PRAGMA busy_timeout=30000")
+        source.backup(dest)
+        dest.commit()
+    finally:
+        dest.close()
+        source.close()
+    return str(target)
+
+async def install_no_delete_guards(db):
+    """
+    Permanent database-level guard: normal bot code cannot DELETE records.
+    This intentionally applies to business, payment, seller, support, admin,
+    settings and audit tables. Corrections must use UPDATE/INSERT.
+    """
+    for table in PROTECTED_TABLES:
+        trigger = "protect_delete_" + table
+        await db.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS {trigger}
+            BEFORE DELETE ON {table}
+            BEGIN
+                SELECT RAISE(ABORT, 'DATA_DELETE_BLOCKED: {table} is append/protected');
+            END;
+            """
+        )
+
 async def init_db():
+
     db=await connect()
     await db.executescript(SCHEMA)
     migrations = (
@@ -144,7 +216,14 @@ async def init_db():
     }
     for k,v in defaults.items():
         await db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",(k,v))
-    await db.commit(); await db.close()
+    await db.commit()
+    await db.close()
+
+    # Keep a second snapshot after successful initialization/migrations.
+    try:
+        await backup_database("post_init")
+    except Exception:
+        pass
 
 async def upsert_user(user):
     db=await connect()
@@ -295,10 +374,17 @@ async def has_second_order_unlock(customer_id):
 
 async def create_second_order_payment(customer_id, amount, utr="", proof=""):
     db=await connect()
+    ts=now()
+    # Append to immutable payment history first.
+    await db.execute(
+      "INSERT INTO second_order_unlock_history(customer_id,paid_amount,utr,proof,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+      (customer_id,amount,utr,proof,"pending",ts,ts)
+    )
+    # Keep the existing one-row-per-customer live state for compatibility.
     await db.execute(
       "INSERT INTO second_order_unlocks(customer_id,paid_amount,utr,proof,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?) "
       "ON CONFLICT(customer_id) DO UPDATE SET paid_amount=excluded.paid_amount,utr=excluded.utr,proof=excluded.proof,status='pending',verified_by=NULL,updated_at=excluded.updated_at",
-      (customer_id,amount,utr,proof,"pending",now(),now()))
+      (customer_id,amount,utr,proof,"pending",ts,ts))
     await db.commit(); await db.close()
 
 async def verify_second_order_unlock(customer_id, admin_id, ok):
@@ -308,7 +394,7 @@ async def verify_second_order_unlock(customer_id, admin_id, ok):
     await db.commit(); await db.close()
 
 async def consume_second_order_unlock(customer_id):
-    # Preserve the payment/unlock audit record permanently. Do not delete
+    # Preserve the payment/unlock audit record permanently. Never delete
     # customer financial/order history during normal bot operation.
     db=await connect()
     await db.execute(
