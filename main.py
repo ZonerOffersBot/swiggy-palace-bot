@@ -752,13 +752,18 @@ async def error(update,context):
 async def health(request): return PlainTextResponse("OK")
 
 async def main():
-    if not BOT_TOKEN: raise RuntimeError("BOT_TOKEN is missing")
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is missing")
+
     await db.init_db()
     await db.ensure_bootstrap_admins(ADMIN_IDS)
-    log.info("Database initialized; starting Telegram polling")
+    log.info("Database initialized")
+
     app=Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
     global app_global
     app_global=app
+
+    # Register every Telegram handler before polling starts.
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("admin",admin_cmd))
     app.add_handler(CommandHandler("addadmin",addadmin_cmd))
@@ -778,23 +783,64 @@ async def main():
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     app.add_error_handler(error)
+
     async def post_init(application):
         await application.bot.set_my_commands([
-          ("start","🏰 Start Swiggy Palace"),("admin","👑 Admin Panel"),
-          ("feedback","⭐ Order Feedback")
+            ("start","🏰 Start Swiggy Palace"),
+            ("admin","👑 Admin Panel"),
+            ("feedback","⭐ Order Feedback")
         ])
-    await app.initialize()
-    me=await app.bot.get_me()
-    log.info("Telegram bot connected as @%s (%s)", me.username, me.id)
-    await post_init(app)
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)
-    log.info("Telegram polling started successfully")
+
+    # Start the HTTP health server independently so Render can see a live process
+    # even while Telegram polling is connecting/reconnecting.
     from uvicorn import Config, Server
     web=Starlette(routes=[Route("/health",health)])
     server=Server(Config(web,host="0.0.0.0",port=PORT,log_level="info"))
-    await server.serve()
+    health_task=asyncio.create_task(server.serve())
+
+    try:
+        await app.initialize()
+        me=await app.bot.get_me()
+        log.info("Telegram bot connected as @%s (%s)", me.username, me.id)
+        await post_init(app)
+        await app.start()
+        log.info("Starting Telegram polling...")
+        await app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+        log.info("Telegram polling is ACTIVE; bot is ready for messages and buttons")
+
+        # Keep main alive while polling and health server run.
+        await asyncio.Event().wait()
+    except Exception:
+        log.exception("Telegram bot startup/runtime failure")
+        raise
+    finally:
+        try:
+            if app.updater and app.updater.running:
+                await app.updater.stop()
+        except Exception:
+            log.exception("Failed to stop Telegram updater cleanly")
+        try:
+            if app.running:
+                await app.stop()
+        except Exception:
+            log.exception("Failed to stop Telegram application cleanly")
+        try:
+            if app.initialized:
+                await app.shutdown()
+        except Exception:
+            log.exception("Failed to shutdown Telegram application cleanly")
+        if not health_task.done():
+            health_task.cancel()
+            try:
+                await health_task
+            except asyncio.CancelledError:
+                pass
 
 if __name__=="__main__":
-    try: asyncio.run(main())
-    except KeyboardInterrupt: pass
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
