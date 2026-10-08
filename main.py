@@ -530,7 +530,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
             await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
         except Exception:
             await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
-    elif data.startswith("orderview:") or data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
+    elif data.startswith("orderview:") or data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:") or data.startswith("track:"):
         await admin_callback(q,context,data)
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
         await admin_priority_callback(q,data)
@@ -1035,10 +1035,11 @@ async def approve_payment(q,oid,ok):
         pass
 
     who = "Super Admin" if verifier == OWNER_ID else "Assigned Admin"
-    await q.message.reply_text(
-        ("✅ Payment approved." if ok else "❌ Payment rejected.")
-        + f" {oid}\n👤 Verified by: {who}"
-    )
+    if ok:
+        track_kb=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Add Track Link",callback_data=f"track:{oid}")]])
+        await q.message.reply_text(f"✅ Payment approved. {oid}\n👤 Verified by: {who}\n\n📦 Next step: tracking link add karne ke liye neeche button dabayein.",reply_markup=track_kb)
+    else:
+        await q.message.reply_text(f"❌ Payment rejected. {oid}\n👤 Verified by: {who}")
 
 async def admin_priority_callback(q,data):
     if not await is_admin(q.from_user.id):
