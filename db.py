@@ -24,9 +24,18 @@ CREATE TABLE IF NOT EXISTS orders(
  created_at TEXT, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS payments(
- order_id TEXT PRIMARY KEY, utr TEXT, amount REAL DEFAULT 0, proof TEXT,
- status TEXT DEFAULT 'pending', verified_by INTEGER,
- created_at TEXT, updated_at TEXT
+ order_id TEXT PRIMARY KEY,
+ utr TEXT,
+ amount REAL DEFAULT 0,
+ proof TEXT,
+ status TEXT DEFAULT 'pending',
+ verified_by INTEGER,
+ approved_at TEXT,
+ qr_admin_id INTEGER,
+ qr_value TEXT,
+ qr_source TEXT DEFAULT 'assigned_admin',
+ created_at TEXT,
+ updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS priority_payments(
  id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, amount REAL,
@@ -87,9 +96,19 @@ async def connect():
 async def init_db():
     db=await connect()
     await db.executescript(SCHEMA)
-    for sql in ("ALTER TABLE users ADD COLUMN role TEXT DEFAULT ''", "ALTER TABLE users ADD COLUMN public_id TEXT"):
-        try: await db.execute(sql)
-        except Exception: pass
+    migrations = (
+        "ALTER TABLE users ADD COLUMN role TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN public_id TEXT",
+        "ALTER TABLE payments ADD COLUMN approved_at TEXT",
+        "ALTER TABLE payments ADD COLUMN qr_admin_id INTEGER",
+        "ALTER TABLE payments ADD COLUMN qr_value TEXT",
+        "ALTER TABLE payments ADD COLUMN qr_source TEXT DEFAULT 'assigned_admin'",
+    )
+    for sql in migrations:
+        try:
+            await db.execute(sql)
+        except Exception:
+            pass
     try:
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id)")
     except Exception:
@@ -285,6 +304,73 @@ async def update_order(oid,**fields):
     sets=", ".join(f"{k}=?" for k in fields); values=list(fields.values())+[oid]
     db=await connect(); await db.execute(f"UPDATE orders SET {sets} WHERE id=?",values)
     await db.commit(); await db.close()
+
+
+async def create_payment_pending(order_id, utr, amount, qr_admin_id=None, qr_value="", qr_source="assigned_admin"):
+    db = await connect()
+    timestamp = now()
+    await db.execute(
+        """
+        INSERT INTO payments(
+            order_id, utr, amount, proof, status, verified_by,
+            approved_at, qr_admin_id, qr_value, qr_source,
+            created_at, updated_at
+        )
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(order_id) DO UPDATE SET
+            utr=excluded.utr,
+            amount=excluded.amount,
+            proof=NULL,
+            status='pending',
+            verified_by=NULL,
+            approved_at=NULL,
+            qr_admin_id=excluded.qr_admin_id,
+            qr_value=excluded.qr_value,
+            qr_source=excluded.qr_source,
+            updated_at=excluded.updated_at
+        """,
+        (
+            order_id, str(utr).strip(), float(amount or 0), None, "pending",
+            None, None, int(qr_admin_id) if qr_admin_id else None,
+            qr_value or "", qr_source or "assigned_admin", timestamp, timestamp
+        ),
+    )
+    await db.commit()
+    await db.close()
+
+
+async def set_payment_proof(order_id, proof):
+    db = await connect()
+    await db.execute(
+        "UPDATE payments SET proof=?, status='pending', updated_at=? WHERE order_id=?",
+        (proof, now(), order_id),
+    )
+    await db.commit()
+    await db.close()
+
+
+async def approve_payment_record(order_id, verifier_id, ok):
+    db = await connect()
+    status = "verified" if ok else "rejected"
+    await db.execute(
+        """
+        UPDATE payments
+        SET status=?, verified_by=?, approved_at=?, updated_at=?
+        WHERE order_id=? AND status='pending'
+        """,
+        (status, verifier_id, now(), now(), order_id),
+    )
+    await db.commit()
+    await db.close()
+
+
+async def payment_record(order_id):
+    db = await connect()
+    cur = await db.execute("SELECT * FROM payments WHERE order_id=?", (order_id,))
+    row = await cur.fetchone()
+    await db.close()
+    return row
+
 
 async def stats():
     db=await connect()
