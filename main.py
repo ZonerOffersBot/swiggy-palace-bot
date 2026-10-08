@@ -858,9 +858,32 @@ async def qr_photo_handler(update,context):
         await update.message.reply_text("✅ Default Palace QR image saved successfully.")
 
 async def photo_handler(update,context):
-    uid=update.effective_user.id; s=state.get(uid)
-    if not s: return
-    fid=update.message.photo[-1].file_id; action=s["action"]; oid=s.get("oid")
+    uid=update.effective_user.id
+    s=state.get(uid,{})
+    fid=update.message.photo[-1].file_id
+    caption=(update.message.caption or "").strip()
+
+    # Handle admin QR uploads here instead of a separate catch-all PHOTO handler.
+    # PTB processes only the first matching handler in a group; the old QR handler
+    # was matching every photo and preventing customer cart screenshots from
+    # reaching the screenshot handler.
+    if uid==OWNER_ID and s.get("action")=="qr_admin_upload":
+        aid=int(s["admin_id"])
+        await db.set_admin_qr(aid,fid,True)
+        state.pop(uid,None)
+        await update.message.reply_text(f"✅ Admin QR saved successfully for Admin {aid}.")
+        return
+
+    if uid==OWNER_ID and (s.get("action")=="qr_upload" or caption.lower().startswith("/setqr")):
+        await db.set_setting("default_qr",fid)
+        state.pop(uid,None)
+        await update.message.reply_text("✅ Default Palace QR image saved successfully.")
+        return
+
+    if not s:
+        return
+
+    action=s["action"]; oid=s.get("oid")
     if action=="screenshot":
         await db.update_order(oid,cart_screenshot=fid,status="screenshot_received"); state.pop(uid,None)
         await update.message.reply_text(f"📸 {oid} screenshot received. Palace Admin will verify cart and enter actual Swiggy price.")
@@ -995,7 +1018,6 @@ async def main():
     app.add_handler(CommandHandler("skip",skip_cmd))
     app.add_handler(CallbackQueryHandler(seller_entry_callback, pattern=r"^become_seller$"))
     app.add_handler(CallbackQueryHandler(callbacks))
-    app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,qr_photo_handler))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND,photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     app.add_error_handler(error)
