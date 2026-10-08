@@ -125,6 +125,28 @@ async def removeadmin_cmd(update,context):
     await db.remove_admin(int(context.args[0]))
     await update.message.reply_text(f"🗑️ Admin removed: {aid}")
 
+async def forcejoin_add_cmd(update,context):
+    if update.effective_user.id!=OWNER_ID: return
+    if not context.args:
+        await update.message.reply_text("Usage: /forcejoin_add @channel"); return
+    ch=context.args[0].strip()
+    dbx=await db.connect(); cur=await dbx.execute("SELECT value FROM settings WHERE key='force_join_channels'")
+    row=await cur.fetchone(); current=[x.strip() for x in ((row["value"] if row else "") or FORCE_JOIN_CHANNEL).split(",") if x.strip()]
+    if ch not in current: current.append(ch)
+    await dbx.execute("INSERT INTO settings(key,value) VALUES('force_join_channels',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(",".join(current),)); await dbx.commit(); await dbx.close()
+    await update.message.reply_text("✅ Force Join channel added: "+ch)
+
+async def forcejoin_remove_cmd(update,context):
+    if update.effective_user.id!=OWNER_ID: return
+    if not context.args:
+        await update.message.reply_text("Usage: /forcejoin_remove @channel"); return
+    ch=context.args[0].strip()
+    dbx=await db.connect(); cur=await dbx.execute("SELECT value FROM settings WHERE key='force_join_channels'")
+    row=await cur.fetchone(); current=[x.strip() for x in ((row["value"] if row else "") or FORCE_JOIN_CHANNEL).split(",") if x.strip()]
+    current=[x for x in current if x!=ch]
+    await dbx.execute("INSERT INTO settings(key,value) VALUES('force_join_channels',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(",".join(current),)); await dbx.commit(); await dbx.close()
+    await update.message.reply_text("🗑️ Force Join channel removed: "+ch)
+
 async def admin_cmd(update,context):
     uid=update.effective_user.id
     if not await is_admin(uid): return
@@ -322,6 +344,18 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
             return
         await db.set_setting("default_qr","")
         await q.message.reply_text("🗑️ Default Palace QR removed.")
+    elif data.startswith("setid:"):
+        if not await is_admin(uid): return
+        oid=data.split(":",1)[1]; o=await db.get_order(oid)
+        if not o or (uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid): return
+        state[uid]={"action":"swiggyid","oid":oid}
+        await q.message.reply_text(f"🧾 <b>{oid}</b>\\n\\nSwiggy Order ID bhejo:",parse_mode="HTML")
+    elif data.startswith("setprice:"):
+        if not await is_admin(uid): return
+        oid=data.split(":",1)[1]; o=await db.get_order(oid)
+        if not o or (uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid): return
+        state[uid]={"action":"final_price","oid":oid}
+        await q.message.reply_text(f"💰 <b>{oid}</b>\\n\\nFinal Swiggy price ₹ me bhejo:",parse_mode="HTML")
     elif data.startswith("pay:"):
         oid=data.split(":",1)[1]; o=await db.get_order(oid)
         if not o or o["customer_id"]!=uid: return
@@ -423,6 +457,86 @@ async def admin_callback(q,context,data):
         try: await context.bot.send_message(cid,"✅ 2nd order unlock verified. Ab New Order open karke next order bana sakte ho." if ok else "❌ 2nd order unlock payment rejected.",parse_mode="HTML")
         except Exception: pass
         await q.message.reply_text("✅ Unlock verified." if ok else "❌ Unlock rejected.")
+    elif data=="a_back":
+        await q.message.reply_text("👑 <b>Admin Panel</b>",parse_mode="HTML",reply_markup=admin_menu())
+    elif data=="a_receive":
+        if not await is_admin(uid): return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' ORDER BY o.created_at ASC LIMIT 20")
+        rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("📥 <b>PAYMENT RECEIVE</b>\\n\\nNo pending payment received.",parse_mode="HTML"); return
+        for o in rows:
+            if uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid: continue
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Receive / Approve",callback_data=f"approvepay:{o['id']}"),InlineKeyboardButton("❌ Reject",callback_data=f"rejectpay:{o['id']}")]])
+            caption=f"📥 <b>PAYMENT RECEIVE</b>\\n\\n🆔 {o['id']}\\n💰 ₹{o['total']:.2f}\\n🧾 UTR: <code>{o['utr']}</code>\\n👤 Customer: <code>{o['customer_id']}</code>"
+            try:
+                if o["proof"]:
+                    await q.message.reply_photo(o["proof"],caption=caption,parse_mode="HTML",reply_markup=kb)
+                else:
+                    await q.message.reply_text(caption+"\\n\\n⚠️ Screenshot not received.",parse_mode="HTML",reply_markup=kb)
+            except Exception:
+                await q.message.reply_text(caption,parse_mode="HTML",reply_markup=kb)
+    elif data=="a_search":
+        if not await is_admin(uid): return
+        state[uid]={"action":"admin_search"}
+        await q.message.reply_text("🔎 <b>SEARCH ID</b>\\n\\nOrder ID, Customer Telegram ID ya Public ID bhejo.",parse_mode="HTML")
+    elif data=="a_forcejoin":
+        if uid!=OWNER_ID:
+            await q.message.reply_text("🔒 Sirf Super Admin Force Join manage kar sakta hai."); return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT value FROM settings WHERE key='force_join_channels'")
+        row=await cur.fetchone(); await dbx.close()
+        channels=[x.strip() for x in ((row["value"] if row else "") or FORCE_JOIN_CHANNEL).split(",") if x.strip()]
+        await q.message.reply_text("📢 <b>FORCE JOIN</b>\\n\\nCurrent channels:\\n"+("\\n".join("• "+x for x in channels) if channels else "• None")+
+            "\\n\\nUse /forcejoin_add @channel to add.\\nUse /forcejoin_remove @channel to remove.",parse_mode="HTML")
+    elif data=="a_support":
+        if not await is_admin(uid): return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT id,customer_id,subject,created_at FROM tickets ORDER BY created_at DESC LIMIT 20")
+        rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("🎫 <b>HELP & SUPPORT</b>\\n\\nNo tickets.",parse_mode="HTML"); return
+        await q.message.reply_text("🎫 <b>RECENT SUPPORT TICKETS</b>\\n\\n"+("\\n".join(f"#{x['id']} • {x['customer_id']} • {x['subject']}" for x in rows)),parse_mode="HTML")
+    elif data=="m_profile":
+        a=await db.get_admin(uid)
+        await q.message.reply_text(f"👤 <b>My Profile</b>\\n\\n🆔 Telegram ID: <code>{uid}</code>\\n👤 Name: {(a['display_name'] if a else q.from_user.first_name) or '-'}\\n🔑 Role: {(a['role'] if a else 'admin')}",parse_mode="HTML",reply_markup=mini_admin_menu())
+    elif data=="m_stats":
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT COUNT(*) n FROM orders WHERE assigned_admin=?",(uid,)); n=(await cur.fetchone())["n"]
+        cur=await dbx.execute("SELECT COUNT(*) n FROM orders WHERE assigned_admin=? AND status NOT IN ('completed','cancelled','refund_completed')",(uid,)); active=(await cur.fetchone())["n"]
+        await dbx.close()
+        await q.message.reply_text(f"📊 <b>My Stats</b>\\n\\n📦 Total Assigned: {n}\\n⏳ Active: {active}",parse_mode="HTML",reply_markup=mini_admin_menu())
+    elif data=="m_qr":
+        a=await db.get_admin(uid)
+        if a and a["qr_enabled"] and a["qr_value"]:
+            await q.message.reply_photo(a["qr_value"],caption="📷 Your assigned payment QR",reply_markup=mini_admin_menu())
+        else:
+            await q.message.reply_text("📷 Your Admin QR is not configured. Super Admin se QR set karwayein.",reply_markup=mini_admin_menu())
+    elif data=="m_support":
+        state[uid]={"action":"ticket_subject"}
+        await q.message.reply_text("💬 Support query likho. Ye support ticket ke roop me save hogi.",parse_mode="HTML")
+    elif data=="m_new" or data=="m_active" or data=="m_pay" or data=="m_customers":
+        if not await is_admin(uid): return
+        if data=="m_pay":
+            dbx=await db.connect(); cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' AND o.assigned_admin=? ORDER BY o.created_at ASC LIMIT 20",(uid,)); rows=await cur.fetchall(); await dbx.close()
+            if not rows: await q.message.reply_text("💳 No pending payments.",reply_markup=mini_admin_menu()); return
+            for o in rows:
+                kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Receive / Approve",callback_data=f"approvepay:{o['id']}"),InlineKeyboardButton("❌ Reject",callback_data=f"rejectpay:{o['id']}")]])
+                cap=f"💳 <b>{o['id']}</b>\\n💰 ₹{o['total']:.2f}\\n🧾 UTR: <code>{o['utr']}</code>"
+                if o["proof"]:
+                    try: await q.message.reply_photo(o["proof"],caption=cap,parse_mode="HTML",reply_markup=kb)
+                    except Exception: await q.message.reply_text(cap,parse_mode="HTML",reply_markup=kb)
+                else: await q.message.reply_text(cap+"\\n⚠️ Proof missing.",parse_mode="HTML",reply_markup=kb)
+        elif data=="m_customers":
+            dbx=await db.connect(); cur=await dbx.execute("SELECT DISTINCT customer_id FROM orders WHERE assigned_admin=? ORDER BY created_at DESC LIMIT 30",(uid,)); rows=await cur.fetchall(); await dbx.close()
+            await q.message.reply_text("👥 <b>MY CUSTOMERS</b>\\n\\n"+("\\n".join("• <code>"+str(x["customer_id"])+"</code>" for x in rows) if rows else "No assigned customers."),parse_mode="HTML",reply_markup=mini_admin_menu())
+        else:
+            status_clause="status NOT IN ('completed','cancelled','refund_completed')" if data=="m_active" else "status IN ('new','address_received','cart_received','screenshot_received','price_confirmed')"
+            dbx=await db.connect(); cur=await dbx.execute(f"SELECT id,status,total FROM orders WHERE assigned_admin=? AND {status_clause} ORDER BY priority DESC,created_at ASC LIMIT 20",(uid,)); rows=await cur.fetchall(); await dbx.close()
+            if not rows: await q.message.reply_text("📦 No matching orders.",reply_markup=mini_admin_menu()); return
+            kb=[[InlineKeyboardButton(f"🆔 {x['id']} • {x['status']}",callback_data=f"orderview:{x['id']}")] for x in rows]
+            await q.message.reply_text("📥 <b>MY ORDERS</b>" if data=="m_new" else "📦 <b>ACTIVE ORDERS</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_new":
         dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status IN ('new','address_received','cart_received','screenshot_received','price_confirmed') ORDER BY priority DESC,created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
         if not rows:
@@ -561,8 +675,11 @@ async def admin_callback(q,context,data):
         except: pass
 
 async def approve_payment(q,oid,ok):
+    if not await is_admin(q.from_user.id): return
     o=await db.get_order(oid)
     if not o: return
+    if q.from_user.id!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=q.from_user.id:
+        await q.message.reply_text("🔒 Ye payment kisi aur Admin ko assigned hai."); return
     dbx=await db.connect()
     await dbx.execute("UPDATE payments SET status=?,verified_by=?,updated_at=? WHERE order_id=?",("verified" if ok else "rejected",q.from_user.id,db.now(),oid))
     await dbx.commit(); await dbx.close()
@@ -581,6 +698,36 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
     if not s: return
     action=s["action"]; oid=s.get("oid")
+    if action=="admin_search":
+        if not await is_admin(uid): return
+        state.pop(uid,None)
+        target=text.strip()
+        o=await db.get_order(target)
+        if o:
+            await update.message.reply_text(f"🔎 Order found: <code>{o['id']}</code>\\nStatus: {o['status']}\\nCustomer: <code>{o['customer_id']}</code>\\nTotal: ₹{o['total']:.2f}",parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📦 Open Order",callback_data=f"orderview:{o['id']}")]])); return
+        try:
+            cid=int(target)
+            u2=await db.get_user(cid)
+            if u2: await update.message.reply_text(f"👤 Customer found\\nID: <code>{cid}</code>\\nPublic ID: <code>{u2['public_id'] or '-'}</code>",parse_mode="HTML"); return
+        except Exception: pass
+        await update.message.reply_text("❌ Order/Customer not found.")
+        return
+    if action=="final_price":
+        try: amount=float(text.replace(",","").replace("₹","").strip())
+        except Exception:
+            await update.message.reply_text("❌ Valid amount bhejo, e.g. 349.50"); return
+        oid=s.get("oid"); o=await db.get_order(oid)
+        if not o or not await is_admin(uid): return
+        if uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid: return
+        charge=float(await db.setting("palace_charge","30")) if await db.setting("palace_charge_enabled","1")=="1" else 0
+        priority=float(o["priority_fee"] or 0)
+        total=amount+charge+priority
+        await db.update_order(oid,swiggy_amount=amount,palace_charge=charge,total=total,status="price_confirmed")
+        state.pop(uid,None)
+        await update.message.reply_text(f"✅ Final price saved.\\n🆔 {oid}\\n🍔 Swiggy: ₹{amount:.2f}\\n🏰 Palace: ₹{charge:.2f}\\n⭐ Priority: ₹{priority:.2f}\\n💳 Total: ₹{total:.2f}",parse_mode="HTML")
+        try: await context.bot.send_message(o["customer_id"],f"💰 <b>{oid} FINAL PRICE</b>\\n\\n💳 Total payable: <b>₹{total:.2f}</b>\\n👇 Payment button order details se available hai.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💳 Pay Now",callback_data=f"pay:{oid}")]]))
+        except Exception: pass
+        return
     if action=="seller_form":
         fields=["full_name","phone","city","experience","upi","business"]
         prompts=["2️⃣ <b>Mobile Number</b> bhejein:","3️⃣ <b>City</b> bhejein:","4️⃣ <b>Experience</b> bhejein:","5️⃣ <b>UPI ID</b> bhejein:","6️⃣ <b>Business / Work Details</b> bhejein:"]
@@ -766,6 +913,8 @@ async def main():
     # Register every Telegram handler before polling starts.
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("admin",admin_cmd))
+    app.add_handler(CommandHandler("forcejoin_add",forcejoin_add_cmd))
+    app.add_handler(CommandHandler("forcejoin_remove",forcejoin_remove_cmd))
     app.add_handler(CommandHandler("addadmin",addadmin_cmd))
     app.add_handler(CommandHandler("removeadmin",removeadmin_cmd))
     app.add_handler(CommandHandler("price",price_cmd))
