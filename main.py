@@ -903,14 +903,15 @@ async def admin_callback(q,context,data):
         if uid!=OWNER_ID:
             await q.message.reply_text("🔒 Sirf Super Admin Owner hi Admin management kar sakta hai.")
             return
-        rows=await db.list_admins()
-        lines=["👨‍💼 <b>ADMIN MANAGEMENT</b>",""]
+        rows=await db.list_all_admins()
+        lines=["👨‍💼 <b>ADMIN MANAGEMENT</b>","", "🔒 <b>All admin records are retained. Nothing is deleted.</b>",""]
         if rows:
             for a in rows:
                 name=f" — {a['display_name']}" if a['display_name'] else ""
-                lines.append(f"🆔 <code>{a['id']}</code> • {a['role']}{name}")
+                status="🟢 ACTIVE" if a["active"] else "🔴 INACTIVE"
+                lines.append(f"{status} • 🆔 <code>{a['id']}</code> • {a['role']}{name}")
         else:
-            lines.append("No admins configured.")
+            lines.append("No admin records found.")
         lines += ["","➕ <b>Add Admin</b> ke liye use karein:","<code>/addadmin TELEGRAM_ID ROLE Name</code>","Example: <code>/addadmin 123456789 order_admin Rahul</code>","", "🗑️ Remove: <code>/removeadmin TELEGRAM_ID</code>"]
         await q.message.reply_text("\n".join(lines),parse_mode="HTML")
     elif data=="a_charges":
