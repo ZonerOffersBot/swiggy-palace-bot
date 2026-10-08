@@ -558,21 +558,39 @@ async def admin_callback(q,context,data):
             return
         customer=await db.get_user(int(o["customer_id"]))
         assigned=await db.get_admin(int(o["assigned_admin"])) if o["assigned_admin"] else None
-        assigned_name=(assigned["display_name"] or str(o["assigned_admin"])) if assigned else "Unassigned"
+
+        # Legacy SQLite rows can contain NULL/text in fields that are normally numeric.
+        # Normalize them before formatting so one malformed order never triggers the
+        # global "Temporary error" handler.
+        def money(value):
+            try:
+                return f"{float(value or 0):.2f}"
+            except (TypeError, ValueError):
+                return "0.00"
+
+        from html import escape
+        assigned_name=escape((assigned["display_name"] or str(o["assigned_admin"])) if assigned else "Unassigned")
+        public_id=escape(str(customer["public_id"])) if customer and customer["public_id"] else "-"
+        status=escape(str(o["status"] or "-"))
+        payment_status=escape(str(o["payment_status"] or "-"))
+        swiggy_order_id=escape(str(o["swiggy_order_id"])) if o["swiggy_order_id"] else "-"
+        address=escape(str(o["address_link"])) if o["address_link"] else "-"
+        cart=escape(str(o["cart_link"])) if o["cart_link"] else "-"
+
         msg=(f"📦 <b>ORDER DETAILS</b>\n\n"
-             f"🆔 <code>{o['id']}</code>\n"
+             f"🆔 <code>{escape(str(o['id']))}</code>\n"
              f"👤 Customer: <code>{o['customer_id']}</code>\n"
-             f"🪪 Customer ID: <code>{customer['public_id'] if customer and customer['public_id'] else '-'}</code>\n"
+             f"🪪 Customer ID: <code>{public_id}</code>\n"
              f"👨‍💼 Assigned Admin: <b>{assigned_name}</b>\n"
-             f"📌 Status: <b>{o['status']}</b>\n"
-             f"🍔 Swiggy Amount: ₹{o['swiggy_amount']:.2f}\n"
-             f"🏰 Palace Charge: ₹{o['palace_charge']:.2f}\n"
-             f"⭐ Priority Fee: ₹{o['priority_fee']:.2f}\n"
-             f"💳 Total: ₹{o['total']:.2f}\n"
-             f"💰 Payment: <b>{o['payment_status']}</b>\n"
-             f"🧾 Swiggy Order ID: {o['swiggy_order_id'] or '-'}\n\n"
-             f"📍 Address: {o['address_link'] or '-'}\n"
-             f"🛒 Cart: {o['cart_link'] or '-'}")
+             f"📌 Status: <b>{status}</b>\n"
+             f"🍔 Swiggy Amount: ₹{money(o['swiggy_amount'])}\n"
+             f"🏰 Palace Charge: ₹{money(o['palace_charge'])}\n"
+             f"⭐ Priority Fee: ₹{money(o['priority_fee'])}\n"
+             f"💳 Total: ₹{money(o['total'])}\n"
+             f"💰 Payment: <b>{payment_status}</b>\n"
+             f"🧾 Swiggy Order ID: {swiggy_order_id}\n\n"
+             f"📍 Address: {address}\n"
+             f"🛒 Cart: {cart}")
         kb=order_actions(oid).inline_keyboard
         kb.insert(0,[InlineKeyboardButton("👤 Open Customer",callback_data=f"userview:{o['customer_id']}")])
         await q.message.reply_text(msg,parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
