@@ -190,7 +190,15 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         if uid!=OWNER_ID: return
         sid=int(data.split(":",1)[1]); ok=data.startswith("seller_approve:")
         await db.set_setting("seller_status_"+str(sid),"approved" if ok else "rejected")
-        if ok: await db.add_admin(sid,"mini_admin","Seller")
+        if ok:
+            seller_user = await db.get_user(sid)
+            seller_name = (
+                (json.loads(await db.setting("seller_"+str(sid),"{}") or "{}").get("full_name","") or "").strip()
+                or (seller_user["first_name"] if seller_user and seller_user["first_name"] else "")
+                or (seller_user["username"] if seller_user and seller_user["username"] else "")
+                or f"Telegram {sid}"
+            )
+            await db.add_admin(sid,"mini_admin",seller_name)
         try: await context.bot.send_message(sid,"🎉 Seller Approved! Mini Admin access enabled." if ok else "❌ Seller application rejected.")
         except Exception: pass
         await q.message.reply_text("✅ Seller approved; Mini Admin enabled." if ok else "❌ Seller rejected."); return
@@ -735,9 +743,15 @@ async def admin_callback(q,context,data):
                 customer["public_id"] if customer and customer["public_id"] else
                 f"TG-{customer_id}" if customer_id else "-"
             )
+            # Always show a real seller/admin identity when possible.
+            # Older admin rows may have an empty/default display name, so fall
+            # back to the linked Telegram user's current profile.
+            assigned_user = await db.get_user(assigned_id) if assigned_id else None
             assigned_name = clean(
-                assigned["display_name"] if assigned and assigned["display_name"] else
-                assigned_id if assigned_id else "Unassigned"
+                (assigned["display_name"] if assigned and assigned["display_name"] else "") or
+                (assigned_user["first_name"] if assigned_user and assigned_user["first_name"] else "") or
+                (assigned_user["username"] if assigned_user and assigned_user["username"] else "") or
+                (f"Telegram {assigned_id}" if assigned_id else "Unassigned")
             )
 
             msg = (
@@ -966,12 +980,73 @@ async def approve_payment(q,oid,ok):
     )
 
 async def admin_priority_callback(q,data):
-    if not await is_admin(q.from_user.id): return
-    uid=int(data.split(":")[1]); dbx=await db.connect()
+    if not await is_admin(q.from_user.id):
+        await q.answer("Not authorized", show_alert=True)
+        return
+    try:
+        uid=int(data.split(":",1)[1])
+    except (ValueError,IndexError):
+        await q.answer("Invalid customer", show_alert=True)
+        return
+
     ok=data.startswith("prioapprove:")
-    await dbx.execute("UPDATE priority_payments SET status=?,verified_by=? WHERE customer_id=? AND status='pending'",("verified" if ok else "rejected",q.from_user.id,uid))
-    await dbx.execute("UPDATE users SET priority=?,priority_paid=? WHERE id=?",(1 if ok else 0,1 if ok else 0,uid))
-    await dbx.commit(); await dbx.close(); await q.message.reply_text("⭐ Priority "+("activated." if ok else "rejected."))
+    dbx=await db.connect()
+    try:
+        cur=await dbx.execute(
+            "SELECT amount,utr FROM priority_payments WHERE customer_id=? AND status='pending' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (uid,)
+        )
+        pending=await cur.fetchone()
+        if not pending:
+            await q.answer("No pending priority payment", show_alert=True)
+            return
+
+        await dbx.execute(
+            "UPDATE priority_payments SET status=?,verified_by=? "
+            "WHERE customer_id=? AND status='pending'",
+            ("verified" if ok else "rejected",q.from_user.id,uid)
+        )
+        await dbx.execute(
+            "UPDATE users SET priority=?,priority_paid=? WHERE id=?",
+            (1 if ok else 0,1 if ok else 0,uid)
+        )
+        await dbx.commit()
+    finally:
+        await dbx.close()
+
+    try:
+        await q.answer("Priority activated" if ok else "Priority rejected")
+    except Exception:
+        pass
+
+    try:
+        await q.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    customer=await db.get_user(uid)
+    cname=(customer["first_name"] if customer else "") or (customer["username"] if customer else "") or f"Telegram {uid}"
+    try:
+        await context.bot.send_message(
+            uid,
+            (
+                "⭐ <b>HIGH PRIORITY ACTIVE</b>\n\n"
+                "Aapka High Priority payment verify ho gaya hai.\n"
+                "Aapka order faster processing queue me hai."
+                if ok else
+                "❌ <b>HIGH PRIORITY PAYMENT REJECTED</b>\n\n"
+                "Payment verify nahi hua. Please assigned Admin se contact karein."
+            ),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    await q.message.reply_text(
+        f"⭐ Priority {'activated' if ok else 'rejected'} for <b>{cname}</b> "
+        f"(<code>{uid}</code>).",
+        parse_mode="HTML"
+    )
 
 async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
@@ -1165,12 +1240,43 @@ async def photo_handler(update,context):
             try: await context.bot.send_photo(aid,fid,caption=f"🔓 2nd order unlock payment pending from {uid}\n💰 ₹{s['fee']:.0f}\nUTR: {s['utr']}\n🔒 Assigned customer payment.")
             except: pass
     elif action=="priority_proof":
-        dbx=await db.connect(); await dbx.execute("INSERT INTO priority_payments(customer_id,amount,utr,proof,created_at) VALUES(?,?,?,?,?)",(uid,s["fee"],s["utr"],fid,db.now())); await dbx.commit(); await dbx.close(); state.pop(uid,None)
+        # Store the priority payment first, then send the assigned Admin a
+        # real approve/reject keyboard. Previously the payment was stored but
+        # no admin action buttons were sent, so High Priority could never be
+        # activated from the normal flow.
+        dbx=await db.connect()
+        await dbx.execute(
+            "INSERT INTO priority_payments(customer_id,amount,utr,proof,created_at,status) VALUES(?,?,?,?,?,?)",
+            (uid,s["fee"],s["utr"],fid,db.now(),"pending")
+        )
+        await dbx.commit()
+        await dbx.close()
+        state.pop(uid,None)
         await update.message.reply_text("⭐ Priority payment received. Admin verification pending.")
         aid=int(s.get("admin_id") or await db.get_customer_admin(uid) or OWNER_ID)
         if aid:
-            try: await context.bot.send_photo(aid,fid,caption=f"⭐ Priority payment pending from {uid}\n💰 ₹{s['fee']:.0f}\nUTR: {s['utr']}\n🔒 Assigned customer payment.")
-            except: pass
+            try:
+                customer = await db.get_user(uid)
+                cname = (customer["first_name"] if customer else "") or (customer["username"] if customer else "") or f"Telegram {uid}"
+                kb = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ Approve Priority",callback_data=f"prioapprove:{uid}"),
+                    InlineKeyboardButton("❌ Reject",callback_data=f"prioreject:{uid}")
+                ]])
+                await context.bot.send_photo(
+                    aid,
+                    fid,
+                    caption=(
+                        "⭐ <b>HIGH PRIORITY PAYMENT PENDING</b>\n\n"
+                        f"👤 Customer: <b>{cname}</b>\n"
+                        f"🆔 Telegram ID: <code>{uid}</code>\n"
+                        f"💰 Amount: ₹{float(s['fee']):.0f}\n"
+                        f"🧾 UTR: <code>{s['utr']}</code>"
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=kb
+                )
+            except Exception:
+                log.exception("Failed to send priority verification to admin=%s customer=%s", aid, uid)
 
 async def price_cmd(update,context):
     if not await is_admin(update.effective_user.id) or len(context.args)<2: return
