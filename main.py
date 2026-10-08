@@ -509,7 +509,7 @@ async def admin_callback(q,context,data):
     elif data=="a_receive":
         if not await is_admin(uid): return
         dbx=await db.connect()
-        cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' ORDER BY o.created_at ASC LIMIT 20")
+        cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' AND (o.assigned_admin=? OR ?=1) ORDER BY o.created_at ASC LIMIT 20",(uid,1 if uid==OWNER_ID else 0))
         rows=await cur.fetchall(); await dbx.close()
         if not rows:
             await q.message.reply_text("📥 <b>PAYMENT RECEIVE</b>\\n\\nNo pending payment received.",parse_mode="HTML"); return
@@ -765,16 +765,72 @@ async def admin_callback(q,context,data):
         except: pass
 
 async def approve_payment(q,oid,ok):
-    if not await is_admin(q.from_user.id): return
-    o=await db.get_order(oid)
-    if not o: return
-    if q.from_user.id!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=q.from_user.id:
-        await q.message.reply_text("🔒 Ye payment kisi aur Admin ko assigned hai."); return
-    dbx=await db.connect()
-    await dbx.execute("UPDATE payments SET status=?,verified_by=?,updated_at=? WHERE order_id=?",("verified" if ok else "rejected",q.from_user.id,db.now(),oid))
-    await dbx.commit(); await dbx.close()
-    await db.update_order(oid,payment_status="verified" if ok else "rejected",status="ready_to_place" if ok else "price_confirmed")
-    await q.message.reply_text(("✅ Payment approved." if ok else "❌ Payment rejected.")+f" {oid}")
+    verifier = q.from_user.id
+    if not await is_admin(verifier):
+        return
+
+    o = await db.get_order(oid)
+    if not o:
+        await q.message.reply_text("❌ Order not found.")
+        return
+
+    assigned = o["assigned_admin"]
+    try:
+        assigned = int(assigned) if assigned not in (None, "", "0") else None
+    except (TypeError, ValueError):
+        assigned = None
+
+    # Assigned Admin OR Super Admin only.
+    if verifier != OWNER_ID and assigned != verifier:
+        await q.message.reply_text(
+            "🔒 Payment approval restricted. Sirf assigned Admin ya Super Admin approve/reject kar sakta hai."
+        )
+        return
+
+    payment = await db.payment_record(oid)
+    if not payment:
+        await q.message.reply_text("❌ Payment record not found.")
+        return
+
+    if str(payment["status"]) != "pending":
+        await q.message.reply_text(
+            f"ℹ️ This payment is already {payment['status']}."
+        )
+        return
+
+    await db.approve_payment_record(oid, verifier, ok)
+    await db.update_order(
+        oid,
+        payment_status="verified" if ok else "rejected",
+        status="ready_to_place" if ok else "price_confirmed"
+    )
+    await db.audit(
+        verifier,
+        "payment_approved" if ok else "payment_rejected",
+        oid,
+        f"assigned_admin={assigned}; qr_admin_id={payment['qr_admin_id']}; qr_source={payment['qr_source']}"
+    )
+
+    try:
+        await q.get_bot().send_message(
+            o["customer_id"],
+            (
+                f"✅ <b>Payment Approved</b>\n🆔 <code>{oid}</code>\n"
+                "Payment manually verified. Your order is ready for processing."
+                if ok else
+                f"❌ <b>Payment Rejected</b>\n🆔 <code>{oid}</code>\n"
+                "Payment could not be verified. Please contact your assigned Admin."
+            ),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    who = "Super Admin" if verifier == OWNER_ID else "Assigned Admin"
+    await q.message.reply_text(
+        ("✅ Payment approved." if ok else "❌ Payment rejected.")
+        + f" {oid}\n👤 Verified by: {who}"
+    )
 
 async def admin_priority_callback(q,data):
     if not await is_admin(q.from_user.id): return
