@@ -16,3 +16,5 @@ services:
         value: palace.db
       - key: PORT
         value: 10000
+      - key: WEBHOOK_URL
+        value: https://swiggy-palace-bot.onrender.com
