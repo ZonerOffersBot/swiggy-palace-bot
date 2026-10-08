@@ -783,7 +783,7 @@ async def admin_callback(q,context,data):
                 )
             except Exception:
                 pass
-elif data.startswith("userview:"):
+    elif data.startswith("userview:"):
         cid=int(data.split(":",1)[1])
         customer=await db.get_user(cid)
         if not customer:
