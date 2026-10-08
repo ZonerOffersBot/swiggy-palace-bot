@@ -811,14 +811,27 @@ async def approve_payment(q,oid,ok):
         f"assigned_admin={assigned}; qr_admin_id={payment['qr_admin_id']}; qr_source={payment['qr_source']}"
     )
 
+    customer = await db.get_user(int(o["customer_id"]))
+    assigned_admin_row = await db.get_admin(assigned) if assigned else None
+    customer_name = ((customer["first_name"] if customer else "") or "Customer").strip()
+    customer_uid = (customer["public_id"] if customer else None) or f"TG-{o["customer_id"]}"
+    seller_name = ((assigned_admin_row["display_name"] if assigned_admin_row else "") or "Assigned Seller").strip()
+    seller_uid = f"SP-SELL-{assigned:04d}" if assigned else "SP-SELL-UNASSIGNED"
+
     try:
         await q.get_bot().send_message(
             o["customer_id"],
             (
-                f"✅ <b>Payment Approved</b>\n🆔 <code>{oid}</code>\n"
+                f"✅ <b>Payment Approved</b>\n"
+                f"🆔 Order: <code>{oid}</code>\n"
+                f"👤 Customer: <b>{customer_name}</b> (<code>{customer_uid}</code>)\n"
+                f"🏪 Seller/Admin: <b>{seller_name}</b> (<code>{seller_uid}</code>)\n"
                 "Payment manually verified. Your order is ready for processing."
                 if ok else
-                f"❌ <b>Payment Rejected</b>\n🆔 <code>{oid}</code>\n"
+                f"❌ <b>Payment Rejected</b>\n"
+                f"🆔 Order: <code>{oid}</code>\n"
+                f"👤 Customer: <b>{customer_name}</b> (<code>{customer_uid}</code>)\n"
+                f"🏪 Seller/Admin: <b>{seller_name}</b> (<code>{seller_uid}</code>)\n"
                 "Payment could not be verified. Please contact your assigned Admin."
             ),
             parse_mode="HTML"
