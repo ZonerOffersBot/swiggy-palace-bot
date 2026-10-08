@@ -548,52 +548,77 @@ async def admin_callback(q,context,data):
         kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_new"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
         await q.message.reply_text("📥 <b>NEW ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data.startswith("orderview:"):
-        oid=data.split(":",1)[1]
-        o=await db.get_order(oid)
-        if not o:
-            await q.message.reply_text("❌ Order not found.")
-            return
-        if uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid:
-            await q.message.reply_text("🔒 Ye order kisi aur Admin ko assigned hai.")
-            return
-        customer=await db.get_user(int(o["customer_id"]))
-        assigned=await db.get_admin(int(o["assigned_admin"])) if o["assigned_admin"] else None
+        # Keep order-details rendering isolated: malformed legacy rows must never
+        # bubble into the global Temporary error handler.
+        oid=data.split(":",1)[1].strip()
+        try:
+            o=await db.get_order(oid)
+            if not o:
+                await q.message.reply_text("❌ Order not found.")
+                return
 
-        # Legacy SQLite rows can contain NULL/text in fields that are normally numeric.
-        # Normalize them before formatting so one malformed order never triggers the
-        # global "Temporary error" handler.
-        def money(value):
+            assigned_raw=o["assigned_admin"]
             try:
-                return f"{float(value or 0):.2f}"
-            except (TypeError, ValueError):
-                return "0.00"
+                assigned_id=int(assigned_raw) if assigned_raw not in (None,"","0") else None
+            except (TypeError,ValueError):
+                assigned_id=None
 
-        from html import escape
-        assigned_name=escape((assigned["display_name"] or str(o["assigned_admin"])) if assigned else "Unassigned")
-        public_id=escape(str(customer["public_id"])) if customer and customer["public_id"] else "-"
-        status=escape(str(o["status"] or "-"))
-        payment_status=escape(str(o["payment_status"] or "-"))
-        swiggy_order_id=escape(str(o["swiggy_order_id"])) if o["swiggy_order_id"] else "-"
-        address=escape(str(o["address_link"])) if o["address_link"] else "-"
-        cart=escape(str(o["cart_link"])) if o["cart_link"] else "-"
+            if uid!=OWNER_ID and assigned_id is not None and assigned_id!=uid:
+                await q.message.reply_text("🔒 Ye order kisi aur Admin ko assigned hai.")
+                return
 
-        msg=(f"📦 <b>ORDER DETAILS</b>\n\n"
-             f"🆔 <code>{escape(str(o['id']))}</code>\n"
-             f"👤 Customer: <code>{o['customer_id']}</code>\n"
-             f"🪪 Customer ID: <code>{public_id}</code>\n"
-             f"👨‍💼 Assigned Admin: <b>{assigned_name}</b>\n"
-             f"📌 Status: <b>{status}</b>\n"
-             f"🍔 Swiggy Amount: ₹{money(o['swiggy_amount'])}\n"
-             f"🏰 Palace Charge: ₹{money(o['palace_charge'])}\n"
-             f"⭐ Priority Fee: ₹{money(o['priority_fee'])}\n"
-             f"💳 Total: ₹{money(o['total'])}\n"
-             f"💰 Payment: <b>{payment_status}</b>\n"
-             f"🧾 Swiggy Order ID: {swiggy_order_id}\n\n"
-             f"📍 Address: {address}\n"
-             f"🛒 Cart: {cart}")
-        kb=order_actions(oid).inline_keyboard
-        kb.insert(0,[InlineKeyboardButton("👤 Open Customer",callback_data=f"userview:{o['customer_id']}")])
-        await q.message.reply_text(msg,parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
+            try:
+                customer_id=int(o["customer_id"])
+            except (TypeError,ValueError):
+                customer_id=0
+            customer=await db.get_user(customer_id) if customer_id else None
+            assigned=await db.get_admin(assigned_id) if assigned_id else None
+
+            def money(value):
+                try:
+                    return f"{float(value or 0):.2f}"
+                except (TypeError,ValueError):
+                    return "0.00"
+
+            from html import escape
+            assigned_name=escape(str((assigned["display_name"] or assigned_id) if assigned else "Unassigned"))
+            public_id=escape(str(customer["public_id"])) if customer and customer["public_id"] else "-"
+            status=escape(str(o["status"] or "-"))
+            payment_status=escape(str(o["payment_status"] or "-"))
+            swiggy_order_id=escape(str(o["swiggy_order_id"])) if o["swiggy_order_id"] else "-"
+            address=escape(str(o["address_link"])) if o["address_link"] else "-"
+            cart=escape(str(o["cart_link"])) if o["cart_link"] else "-"
+
+            msg=(f"📦 <b>ORDER DETAILS</b>\\n\\n"
+                 f"🆔 <code>{escape(str(o['id']))}</code>\\n"
+                 f"👤 Customer: <code>{customer_id or '-'}</code>\\n"
+                 f"🪪 Customer ID: <code>{public_id}</code>\\n"
+                 f"👨‍💼 Assigned Admin: <b>{assigned_name}</b>\\n"
+                 f"📌 Status: <b>{status}</b>\\n"
+                 f"🍔 Swiggy Amount: ₹{money(o['swiggy_amount'])}\\n"
+                 f"🏰 Palace Charge: ₹{money(o['palace_charge'])}\\n"
+                 f"⭐ Priority Fee: ₹{money(o['priority_fee'])}\\n"
+                 f"💳 Total: ₹{money(o['total'])}\\n"
+                 f"💰 Payment: <b>{payment_status}</b>\\n"
+                 f"🧾 Swiggy Order ID: {swiggy_order_id}\\n\\n"
+                 f"📍 Address: {address}\\n"
+                 f"🛒 Cart: {cart}")
+
+            try:
+                kb=order_actions(oid).inline_keyboard
+                kb.insert(0,[InlineKeyboardButton("👤 Open Customer",callback_data=f"userview:{customer_id}")])
+                markup=InlineKeyboardMarkup(kb)
+            except Exception:
+                log.exception("Failed to build order action keyboard for %s",oid)
+                markup=None
+
+            await q.message.reply_text(msg,parse_mode="HTML",reply_markup=markup)
+        except Exception:
+            log.exception("Order details failed for %s",oid)
+            try:
+                await q.message.reply_text("⚠️ Order details load nahi ho paayi. Order data safe hai; please Refresh karke dobara try karein.")
+            except Exception:
+                pass
     elif data.startswith("userview:"):
         cid=int(data.split(":",1)[1])
         customer=await db.get_user(cid)
