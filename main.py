@@ -855,6 +855,36 @@ async def admin_callback(q,context,data):
             lines.extend([f"• <code>{x['id']}</code> — {x['status']} — ₹{x['total']:.0f}" for x in orders])
         back=f"orderview:{orders[0]['id']}" if orders else "a_new"
         await q.message.reply_text("\n".join(lines),parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Order",callback_data=back)]]))
+    elif data=="a_order_history":
+        if not await is_admin(uid): return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT id,status,total,customer_id,created_at,updated_at FROM orders ORDER BY created_at DESC LIMIT 100")
+        rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("📚 <b>ORDER HISTORY</b>\n\nNo orders found.",parse_mode="HTML"); return
+        buttons=[]
+        for o in rows:
+            status=str(o["status"] or "-")
+            buttons.append([InlineKeyboardButton(f"🔎 {o['id']} — {status}",callback_data=f"orderview:{o['id']}")])
+        buttons.append([InlineKeyboardButton("🔄 Refresh",callback_data="a_order_history"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")])
+        await q.message.reply_text(
+            f"📚 <b>ALL ORDER HISTORY</b>\n\nTotal shown: <b>{len(rows)}</b>\n"
+            "Completed/cancelled orders bhi yahan permanently visible rahenge.",
+            parse_mode="HTML",reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    elif data=="a_payment_history":
+        if not await is_admin(uid): return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT p.order_id,p.utr,p.amount,p.status,p.verified_by,p.created_at,o.customer_id FROM payments p LEFT JOIN orders o ON o.id=p.order_id ORDER BY p.created_at DESC LIMIT 100")
+        rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("💳 <b>PAYMENT HISTORY</b>\n\nNo payment records found.",parse_mode="HTML"); return
+        lines=["💳 <b>PAYMENT HISTORY</b>",""]
+        for p in rows:
+            lines.append(f"🆔 <code>{p['order_id']}</code> • {p['status'] or '-'} • ₹{float(p['amount'] or 0):.2f}\n🧾 UTR: <code>{p['utr'] or '-'}</code> • 👤 {p['customer_id'] or '-'}")
+        await q.message.reply_text("\n".join(lines),parse_mode="HTML",reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh",callback_data="a_payment_history"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]
+        ]))
     elif data=="a_pay":
         dbx=await db.connect(); cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' ORDER BY o.created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
         if not rows: await q.message.reply_text("💳 No pending payment verification."); return
