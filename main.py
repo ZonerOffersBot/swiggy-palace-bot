@@ -413,7 +413,8 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
               "⚠️ Payment QR abhi configured nahi hai. Assigned Admin ko QR set karna hoga.",
               parse_mode="HTML")
             return
-        state[uid]={"action":"payment_utr","oid":oid}
+        assigned_admin = int(o["assigned_admin"] or 0)
+        state[uid]={"action":"payment_utr","oid":oid,"qr_admin_id":assigned_admin,"qr_value":qr,"qr_source":"assigned_admin"}
         msg=(f"💳 <b>{oid} PAYMENT</b>\n\n"
              f"💰 Total payable: ₹{o['total']:.2f}\n\n"
              "1️⃣ <b>QR par payment karo</b>\n"
@@ -872,8 +873,28 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
             try: await context.bot.send_message(aid,f"🎫 New support ticket #{tid} from {uid}: {text}")
             except: pass
     elif action=="payment_utr":
-        await db.update_order(oid,payment_utr=text); dbx=await db.connect(); await dbx.execute("INSERT OR REPLACE INTO payments(order_id,utr,amount,created_at,updated_at) VALUES(?,?,?,?,?)",(oid,text,(await db.get_order(oid))["total"],db.now(),db.now())); await dbx.commit(); await dbx.close()
-        state[uid]={"action":"payment_proof","oid":oid}; await update.message.reply_text("📸 UTR saved. Ab payment screenshot bhejo.\n🔒 Screenshot sirf aapke assigned Admin ko jayega.")
+        o=await db.get_order(oid)
+        if not o or int(o["customer_id"]) != uid:
+            state.pop(uid,None)
+            await update.message.reply_text("❌ Order not found or unauthorized.")
+            return
+        assigned_admin = int(o["assigned_admin"] or 0)
+        if not assigned_admin:
+            state.pop(uid,None)
+            await update.message.reply_text("⚠️ This order has no assigned Admin. Please contact support.")
+            return
+        await db.update_order(oid,payment_utr=text,payment_status="pending")
+        await db.create_payment_pending(
+            oid, text, o["total"],
+            qr_admin_id=int(s.get("qr_admin_id") or assigned_admin),
+            qr_value=s.get("qr_value") or "",
+            qr_source=s.get("qr_source") or "assigned_admin"
+        )
+        state[uid]={"action":"payment_proof","oid":oid,"assigned_admin":assigned_admin}
+        await update.message.reply_text(
+            "📸 UTR saved. Ab payment screenshot bhejo.\n"
+            "🔒 Payment verification sirf aapke assigned Admin ya Super Admin karega."
+        )
     elif action=="second_order_utr":
         state[uid]={"action":"second_order_proof","utr":text,"fee":s["fee"],"admin_id":s.get("admin_id",0)}
         await update.message.reply_text("📸 UTR saved. Ab 2nd order unlock payment screenshot bhejo.")
@@ -935,7 +956,13 @@ async def photo_handler(update,context):
             try: await context.bot.send_message(aid,f"📥 New cart screenshot for {oid} from customer {uid}. Open Admin Panel with /admin.")
             except: pass
     elif action=="payment_proof":
-        dbx=await db.connect(); await dbx.execute("UPDATE payments SET proof=?,status='pending',updated_at=? WHERE order_id=?",(fid,db.now(),oid)); await dbx.commit(); await dbx.close(); state.pop(uid,None)
+        o=await db.get_order(oid)
+        if not o or int(o["customer_id"]) != uid:
+            state.pop(uid,None)
+            await update.message.reply_text("❌ Order not found or unauthorized.")
+            return
+        await db.set_payment_proof(oid, fid)
+        state.pop(uid,None)
         await update.message.reply_text(f"💳 Payment proof received for {oid}. Manual verification pending.")
         o=await db.get_order(oid); aid=int(o["assigned_admin"] or await db.get_customer_admin(uid) or OWNER_ID)
         if aid:
