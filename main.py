@@ -993,11 +993,24 @@ async def main():
             raise RuntimeError("WEBHOOK_URL or RENDER_EXTERNAL_URL is required for webhook mode")
 
         webhook_url = webhook_base + "/telegram/webhook"
-        await app.bot.set_webhook(
-            url=webhook_url,
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=False
-        )
+        # Register webhook with retries so transient startup errors do not
+        # leave the bot silently disconnected.
+        last_webhook_error = None
+        for attempt in range(1, 6):
+            try:
+                await app.bot.set_webhook(
+                    url=webhook_url,
+                    allowed_updates=Update.ALL_TYPES,
+                    drop_pending_updates=False
+                )
+                last_webhook_error = None
+                break
+            except Exception as exc:
+                last_webhook_error = exc
+                log.exception("Webhook registration attempt %s/5 failed", attempt)
+                await asyncio.sleep(min(attempt * 2, 10))
+        if last_webhook_error is not None:
+            raise RuntimeError(f"Webhook registration failed after 5 attempts: {last_webhook_error}")
         polling_active=True
         telegram_ready=True
         log.info("Telegram webhook is ACTIVE: %s", webhook_url)
@@ -1007,10 +1020,9 @@ async def main():
         log.exception("Telegram bot startup/runtime failure")
         raise
     finally:
-        try:
-            await app.bot.delete_webhook(drop_pending_updates=False)
-        except Exception:
-            log.exception("Failed to clear Telegram webhook cleanly")
+        # Keep the webhook registered during shutdown. This is important on
+        # Render restarts/free-instance wakeups.
+        log.info("Keeping Telegram webhook registered during shutdown.")
         try:
             if app.running:
                 await app.stop()
