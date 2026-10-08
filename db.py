@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS admins(
  created_at TEXT,
  updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS seller_requests(
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id INTEGER NOT NULL,
+ full_name TEXT DEFAULT '', phone TEXT DEFAULT '', city TEXT DEFAULT '',
+ experience TEXT DEFAULT '', upi TEXT DEFAULT '', business TEXT DEFAULT '',
+ status TEXT DEFAULT 'pending', reviewed_by INTEGER, reviewed_at TEXT,
+ created_at TEXT, updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS audit_log(
  id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER, action TEXT,
  order_id TEXT, details TEXT, created_at TEXT
@@ -210,6 +219,24 @@ async def add_admin(aid,role="order_admin",name=""):
         VALUES(?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET role=excluded.role,display_name=excluded.display_name,active=1,updated_at=excluded.updated_at""",
         (aid,role,name,now(),now()))
+    await db.commit(); await db.close()
+
+async def list_seller_requests(status=None):
+    db=await connect()
+    if status:
+        cur=await db.execute("SELECT * FROM seller_requests WHERE status=? ORDER BY created_at DESC",(status,))
+    else:
+        cur=await db.execute("SELECT * FROM seller_requests ORDER BY created_at DESC")
+    rows=await cur.fetchall(); await db.close(); return rows
+
+async def create_seller_request(user_id, data):
+    db=await connect()
+    await db.execute("INSERT INTO seller_requests(user_id,full_name,phone,city,experience,upi,business,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(user_id,data.get('full_name',''),data.get('phone',''),data.get('city',''),data.get('experience',''),data.get('upi',''),data.get('business',''),'pending',now(),now()))
+    await db.commit(); await db.close()
+
+async def review_seller_request(request_id, status, reviewer_id):
+    db=await connect()
+    await db.execute("UPDATE seller_requests SET status=?,reviewed_by=?,reviewed_at=?,updated_at=? WHERE id=?",(status,reviewer_id,now(),now(),request_id))
     await db.commit(); await db.close()
 
 async def remove_admin(aid):
