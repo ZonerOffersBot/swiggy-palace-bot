@@ -305,9 +305,52 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         except Exception:
             await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
     elif data=="my_orders":
-        dbx=await db.connect(); cur=await dbx.execute("SELECT id,status,total FROM orders WHERE customer_id=? ORDER BY created_at DESC LIMIT 10",(uid,)); rows=await cur.fetchall(); await dbx.close()
-        text="📦 <b>My Orders</b>\n\n"+("\n".join(f"🆔 {r['id']} • {r['status']} • ₹{r['total']:.0f}" for r in rows) if rows else "No orders yet.")
-        await q.message.reply_text(text,parse_mode="HTML")
+        dbx=await db.connect(); cur=await dbx.execute(
+            "SELECT id,status,total,swiggy_order_id,updated_at FROM orders WHERE customer_id=? ORDER BY created_at DESC LIMIT 10",
+            (uid,)
+        ); rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("📦 <b>My Orders</b>\n\nNo orders yet.",parse_mode="HTML")
+            return
+        lines=["📦 <b>MY ORDERS</b>",""]
+        buttons=[]
+        for r in rows:
+            total=float(r["total"] or 0)
+            swid=r["swiggy_order_id"] or "-"
+            lines.append(f"🆔 <code>{r['id']}</code> • <b>{r['status']}</b> • ₹{total:.0f}\n🧾 Swiggy ID: {swid}")
+            buttons.append([InlineKeyboardButton(f"🔄 Check Status — {r['id']}",callback_data=f"orderstatus:{r['id']}")])
+        buttons.append([InlineKeyboardButton("🛒 Place New Order",callback_data="new_order")])
+        await q.message.reply_text("\n".join(lines),parse_mode="HTML",reply_markup=InlineKeyboardMarkup(buttons))
+    elif data.startswith("orderstatus:"):
+        oid=data.split(":",1)[1].strip()
+        o=await db.get_order(oid)
+        if not o or int(o["customer_id"])!=uid:
+            await q.message.reply_text("❌ Order not found.")
+            return
+        def _money(v):
+            try: return f"{float(v or 0):.2f}"
+            except (TypeError,ValueError): return "0.00"
+        status=str(o["status"] or "-")
+        swiggy_id=str(o["swiggy_order_id"] or "-")
+        total=_money(o["total"])
+        swiggy_amount=_money(o["swiggy_amount"])
+        palace_charge=_money(o["palace_charge"])
+        priority_fee=_money(o["priority_fee"])
+        msg=(f"📦 <b>ORDER STATUS</b>\n\n"
+             f"🆔 Order: <code>{o['id']}</code>\n"
+             f"📌 Status: <b>{status}</b>\n"
+             f"🧾 Swiggy Order ID: <code>{swiggy_id}</code>\n\n"
+             f"🍔 Swiggy Amount: ₹{swiggy_amount}\n"
+             f"🏰 Palace Charge: ₹{palace_charge}\n"
+             f"⭐ Priority Fee: ₹{priority_fee}\n"
+             f"💳 Total: ₹{total}")
+        kb=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh Status",callback_data=f"orderstatus:{oid}")],
+            [InlineKeyboardButton("📦 My Orders",callback_data="my_orders")],
+            [InlineKeyboardButton("🛒 Place New Order",callback_data="new_order")]
+        ])
+        await q.message.reply_text(msg,parse_mode="HTML",reply_markup=kb)
+        return
     elif data=="profile":
         dbx=await db.connect(); cur=await dbx.execute("SELECT * FROM users WHERE id=?",(uid,)); r=await cur.fetchone(); await dbx.close()
         await q.message.reply_text(f"👤 <b>Profile</b>\n⭐ Rating: {(r['rating_sum']/r['rating_count'] if r['rating_count'] else 0):.1f}\n⚠️ Warnings: {r['warnings']}\n📦 Orders: use My Orders",parse_mode="HTML")
@@ -381,7 +424,7 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
             await q.message.reply_photo(qr,caption=msg,parse_mode="HTML")
         except Exception:
             await q.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML")
-    elif data.startswith("orderview:") or data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
+    elif data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:"):
         await admin_callback(q,context,data)
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
         await admin_priority_callback(q,data)
