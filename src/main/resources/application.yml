@@ -1,0 +1,16 @@
+server:
+  port: ${PORT:10000}
+spring:
+  main:
+    banner-mode: "off"
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+bot:
+  token: ${BOT_TOKEN:}
+  owner-id: ${OWNER_ID:0}
+  admin-ids: ${ADMIN_IDS:}
+  database-path: ${DATABASE_PATH:palace.db}
+  webhook-url: ${WEBHOOK_URL:}
