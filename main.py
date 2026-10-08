@@ -197,6 +197,8 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if data.startswith("seller_approve:") or data.startswith("seller_reject:"):
         if uid!=OWNER_ID: return
         sid=int(data.split(":",1)[1]); ok=data.startswith("seller_approve:")
+        rid=int(data.split(":",2)[1]) if data.count(":")>1 else 0
+        await db.review_seller_request(rid, "approved" if ok else "rejected", uid) if rid else None
         await db.set_setting("seller_status_"+str(sid),"approved" if ok else "rejected")
         if ok:
             seller_user = await db.get_user(sid)
@@ -537,7 +539,7 @@ async def submit_seller_application(target,context):
     uid=target.from_user.id if hasattr(target,"from_user") else target.effective_user.id
     s=state.get(uid,{})
     data=s.get("data",{})
-    await db.set_setting("seller_"+str(uid),json.dumps(data))
+    await db.create_seller_request(uid,data)
     pid=await db.assign_public_id(uid,"seller")
     msg=(f"🏪 <b>NEW SELLER APPLICATION</b>\n\n🪪 Seller ID: <code>{pid}</code>\n🆔 Telegram ID: <code>{uid}</code>\n"
          f"👤 Name: {data.get('full_name','-')}\n📱 Phone: {data.get('phone','-')}\n📍 City: {data.get('city','-')}\n"
@@ -864,6 +866,37 @@ async def admin_callback(q,context,data):
         kb=[[InlineKeyboardButton(f"🆔 {o['id']}",callback_data=f"orderview:{o['id']}")] for o in rows]
         kb += [[InlineKeyboardButton("🔄 Refresh",callback_data="a_active"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]]
         await q.message.reply_text("📦 <b>ONGOING ORDERS</b>\n\nTap an Order ID to view details.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
+    elif data=="a_sellers":
+        if uid!=OWNER_ID: return
+        rows=await db.list_seller_requests()
+        pending=sum(1 for r in rows if r["status"]=="pending")
+        active=sum(1 for r in rows if r["status"]=="approved")
+        rejected=sum(1 for r in rows if r["status"]=="rejected")
+        msg=f"🏪 <b>SELLER MANAGEMENT</b>\n\n⏳ Pending: <b>{pending}</b>\n✅ Active: <b>{active}</b>\n❌ Rejected: <b>{rejected}</b>\n\n📚 Total history: <b>{len(rows)}</b>"
+        kb=InlineKeyboardMarkup([[InlineKeyboardButton("⏳ Pending",callback_data="slist:pending"),InlineKeyboardButton("✅ Active",callback_data="slist:approved")],[InlineKeyboardButton("📚 Request History",callback_data="slist:all")],[InlineKeyboardButton("⬅️ Back",callback_data="admin_back")]])
+        await q.message.edit_text(msg,parse_mode="HTML",reply_markup=kb)
+    elif data.startswith("slist:"):
+        if uid!=OWNER_ID: return
+        status=data.split(":",1)[1]
+        rows=await db.list_seller_requests(None if status=="all" else status)
+        if not rows:
+            await q.message.edit_text("🏪 <b>SELLER LIST</b>\n\nNo requests found.",parse_mode="HTML",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back",callback_data="a_sellers")]]))
+            return
+        buttons=[]
+        for r in rows[:50]:
+            label=("⏳" if r["status"]=="pending" else "✅" if r["status"]=="approved" else "❌")+f" {r['full_name'] or r['user_id']}"
+            buttons.append([InlineKeyboardButton(label[:60],callback_data=f"sreq:{r['id']}")])
+        buttons.append([InlineKeyboardButton("⬅️ Back",callback_data="a_sellers")])
+        await q.message.edit_text("🏪 <b>SELLER REQUESTS</b>",parse_mode="HTML",reply_markup=InlineKeyboardMarkup(buttons))
+    elif data.startswith("sreq:"):
+        if uid!=OWNER_ID: return
+        rid=int(data.split(":",1)[1]); rows=await db.list_seller_requests(); r=next((x for x in rows if int(x["id"])==rid),None)
+        if not r: await q.message.reply_text("❌ Seller request not found."); return
+        msg=(f"🏪 <b>SELLER REQUEST #{rid}</b>\n\n👤 Name: {r['full_name'] or '-'}\n🆔 Telegram: <code>{r['user_id']}</code>\n📱 Phone: {r['phone'] or '-'}\n📍 City: {r['city'] or '-'}\n💼 Experience: {r['experience'] or '-'}\n💳 UPI: {r['upi'] or '-'}\n🏪 Business: {r['business'] or '-'}\n📌 Status: <b>{r['status']}</b>")
+        kb=[]
+        if r["status"]=="pending": kb.append([InlineKeyboardButton("✅ Approve",callback_data=f"seller_approve:{r['user_id']}:{rid}"),InlineKeyboardButton("❌ Reject",callback_data=f"seller_reject:{r['user_id']}:{rid}")])
+        kb.append([InlineKeyboardButton("⬅️ Back",callback_data="a_sellers")])
+        await q.message.edit_text(msg,parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_admins":
         if uid!=OWNER_ID:
             await q.message.reply_text("🔒 Sirf Super Admin Owner hi Admin management kar sakta hai.")
