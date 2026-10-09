@@ -373,9 +373,9 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
                 return
 
             try:
-                fee = float(await db.setting("priority_fee", "49") or 49)
+                fee = float(await db.setting("priority_fee", "35") or 35)
             except Exception:
-                fee = 49.0
+                fee = 35.0
 
             try:
                 sla = str(await db.setting("priority_sla_minutes", "5") or "5").strip()
@@ -977,7 +977,7 @@ async def admin_callback(q,context,data):
         lines += ["","➕ <b>Add Admin</b> ke liye use karein:","<code>/addadmin TELEGRAM_ID ROLE Name</code>","Example: <code>/addadmin 123456789 order_admin Rahul</code>","", "🗑️ Remove: <code>/removeadmin TELEGRAM_ID</code>"]
         await q.message.reply_text("\n".join(lines),parse_mode="HTML")
     elif data=="a_charges":
-        c=await db.setting("palace_charge","30"); enabled=await db.setting("palace_charge_enabled","1"); pf=await db.setting("priority_fee","49")
+        c=await db.setting("palace_charge","15"); enabled=await db.setting("palace_charge_enabled","1"); pf=await db.setting("priority_fee","35")
         await q.message.reply_text(f"💰 Charge ON: {enabled}\n🏰 Palace charge: ₹{c}\n⭐ Priority fee: ₹{pf}\n\nUse /setcharge amount and /setpriority amount.")
     elif data=="a_qr":
         if uid!=OWNER_ID:
@@ -997,7 +997,7 @@ async def admin_callback(q,context,data):
           "📤 Default QR photo upload karein, ya kisi Admin ke liye alag QR set karein.",
           parse_mode="HTML",reply_markup=InlineKeyboardMarkup(kb))
     elif data=="a_settings":
-        await q.message.reply_text("⚙️ <b>Settings</b>\n\n💰 /setcharge 30\n⭐ /setpriority 49\n🏪 /setbusiness on|off\n\n📷 Payment QR ab <b>Admin Panel → 📷 Payment QR → Upload Default QR Photo</b> se set karein.",parse_mode="HTML")
+        await q.message.reply_text("⚙️ <b>Settings</b>\n\n💰 /setcharge 15\n⭐ /setpriority 35\n🏪 /setbusiness on|off\n\n📷 Payment QR ab <b>Admin Panel → 📷 Payment QR → Upload Default QR Photo</b> se set karein.",parse_mode="HTML")
     elif data.startswith("approvepay:"):
         await approve_payment(q,data.split(":")[1],True)
     elif data.startswith("rejectpay:"):
@@ -1270,7 +1270,7 @@ async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
         oid=s.get("oid"); o=await db.get_order(oid)
         if not o or not await is_admin(uid): return
         if uid!=OWNER_ID and o["assigned_admin"] and int(o["assigned_admin"])!=uid: return
-        charge=float(await db.setting("palace_charge","30")) if await db.setting("palace_charge_enabled","1")=="1" else 0
+        charge=float(await db.setting("palace_charge","15")) if await db.setting("palace_charge_enabled","1")=="1" else 0
         priority=float(o["priority_fee"] or 0)
         total=amount+charge+priority
         await db.update_order(oid,swiggy_amount=amount,palace_charge=charge,total=total,status="price_confirmed")
@@ -1479,7 +1479,7 @@ async def price_cmd(update,context):
     if not await is_admin(update.effective_user.id) or len(context.args)<2: return
     oid,amount=context.args[0],float(context.args[1]); o=await db.get_order(oid)
     if not o: await update.message.reply_text("❌ Order not found."); return
-    enabled=await db.setting("palace_charge_enabled","1")=="1"; charge=float(await db.setting("palace_charge","30")) if enabled else 0
+    enabled=await db.setting("palace_charge_enabled","1")=="1"; charge=float(await db.setting("palace_charge","15")) if enabled else 0
     total=amount+charge+o["priority_fee"]+o["adjustment"]; await db.update_order(oid,swiggy_amount=amount,palace_charge=charge,total=total,status="price_confirmed")
     await update.message.reply_text(f"💰 {oid}\n🍔 Swiggy: ₹{amount:.2f}\n🏰 Palace Charge: ₹{charge:.2f}\n⭐ Priority: ₹{o['priority_fee']:.2f}\n💳 Total: ₹{total:.2f}\n\nCustomer can now pay via bot.",parse_mode="HTML")
     try: await context.bot.send_message(o["customer_id"],f"💰 <b>{oid} Final Price</b>\n🍔 Swiggy: ₹{amount:.2f}\n🏰 Palace: ₹{charge:.2f}\n💳 Total: ₹{total:.2f}",parse_mode="HTML",reply_markup=order_actions(oid))
