@@ -237,12 +237,17 @@ async def init_db():
         except Exception:
             pass
     defaults={
-      "palace_charge":"30","palace_charge_enabled":"1",
-      "priority_fee":"49","priority_sla_minutes":"5",
+      "palace_charge":"15","palace_charge_enabled":"1",
+      "priority_fee":"35","priority_sla_minutes":"5",
       "business_open":"on","default_qr":"","force_join_channels":"@Swiggypalace","force_join_verified":""
     }
     for k,v in defaults.items():
         await db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",(k,v))
+
+    # Upgrade only the previous built-in defaults. Preserve any fee the owner
+    # intentionally customized through /setcharge or /setpriority.
+    await db.execute("UPDATE settings SET value='15' WHERE key='palace_charge' AND value='30'")
+    await db.execute("UPDATE settings SET value='35' WHERE key='priority_fee' AND value='49'")
     await db.commit()
     await db.close()
 
