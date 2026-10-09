@@ -186,6 +186,31 @@ async def init_db():
 
     db=await connect()
     await db.executescript(SCHEMA)
+
+    # Repair older Render/SQLite databases before handlers use customer profiles.
+    # CREATE TABLE IF NOT EXISTS does not add columns to an existing legacy table.
+    required_columns = {
+        "users": {
+            "username": "TEXT DEFAULT ''",
+            "first_name": "TEXT DEFAULT ''",
+            "role": "TEXT DEFAULT ''",
+            "public_id": "TEXT",
+            "rating_sum": "INTEGER DEFAULT 0",
+            "rating_count": "INTEGER DEFAULT 0",
+            "warnings": "INTEGER DEFAULT 0",
+            "priority": "INTEGER DEFAULT 0",
+            "priority_paid": "INTEGER DEFAULT 0",
+            "created_at": "TEXT",
+            "last_seen": "TEXT",
+        }
+    }
+    for table, columns in required_columns.items():
+        cur = await db.execute(f"PRAGMA table_info({table})")
+        existing = {row["name"] for row in await cur.fetchall()}
+        for column, definition in columns.items():
+            if column not in existing:
+                await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
     migrations = (
         "ALTER TABLE users ADD COLUMN role TEXT DEFAULT ''",
         "ALTER TABLE users ADD COLUMN public_id TEXT",
@@ -239,21 +264,49 @@ async def upsert_user(user):
     await db.commit(); await db.close()
 
 async def assign_public_id(uid, role):
-    prefix="CUST" if role=="customer" else "SELL"
-    db=await connect()
-    cur=await db.execute("SELECT public_id FROM users WHERE id=?",(uid,))
-    row=await cur.fetchone()
-    if row and row["public_id"]:
+    """Assign a stable customer/seller ID without races on simultaneous clicks."""
+    prefix = "CUST" if role == "customer" else "SELL"
+    db = await connect()
+    try:
+        # Serialize ID allocation so concurrent callback updates cannot choose
+        # the same next public ID and trigger a UNIQUE constraint error.
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute("SELECT role, public_id FROM users WHERE id=?", (uid,))
+        user_row = await cur.fetchone()
+        if not user_row:
+            raise ValueError(f"Cannot assign public ID: user {uid} is not initialized")
+
+        if user_row["public_id"]:
+            public_id = str(user_row["public_id"])
+            # Preserve existing ID, but ensure the selected role is recorded.
+            await db.execute("UPDATE users SET role=? WHERE id=?", (role, uid))
+            await db.commit()
+            return public_id
+
+        cur = await db.execute(
+            "SELECT public_id FROM users WHERE role=? AND public_id IS NOT NULL",
+            (role,),
+        )
+        max_number = 0
+        for row in await cur.fetchall():
+            try:
+                suffix = int(str(row["public_id"]).rsplit("-", 1)[-1])
+                max_number = max(max_number, suffix)
+            except (TypeError, ValueError):
+                continue
+
+        public_id = f"SP-{prefix}-{max_number + 1:04d}"
+        await db.execute(
+            "UPDATE users SET role=?, public_id=? WHERE id=?",
+            (role, public_id, uid),
+        )
+        await db.commit()
+        return public_id
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
         await db.close()
-        return row["public_id"]
-    cur=await db.execute("SELECT public_id FROM users WHERE role=? AND public_id IS NOT NULL ORDER BY rowid DESC LIMIT 1",(role,))
-    row=await cur.fetchone()
-    try: n=int(str(row["public_id"]).split("-")[-1])+1 if row else 1
-    except Exception: n=1
-    public_id=f"SP-{prefix}-{n:04d}"
-    await db.execute("UPDATE users SET role=?,public_id=? WHERE id=?",(role,public_id,uid))
-    await db.commit(); await db.close()
-    return public_id
 
 async def get_user_by_public_id(public_id):
     db=await connect()
