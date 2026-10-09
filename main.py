@@ -1180,7 +1180,12 @@ async def admin_priority_callback(q,data):
 
 async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
-    if not s: return
+    if not s:
+        await update.message.reply_text(
+            "👋 Swiggy Palace menu use karne ke liye /start dabayein.\n"
+            "Agar admin hain to /admin ya /ping use karein."
+        )
+        return
     action=s["action"]; oid=s.get("oid")
     if action=="tracking_link":
         if not await is_admin(uid):
@@ -1485,10 +1490,22 @@ async def number_handler(update,context):
         pass
 
 async def error(update,context):
-    log.exception("Unhandled bot error",exc_info=context.error)
+    exc = context.error
+    if exc is not None:
+        log.error(
+            "Unhandled bot error while processing update_id=%s",
+            getattr(update, "update_id", None),
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    else:
+        log.error("Unhandled bot error without exception details")
     try:
-        if update and update.effective_message: await update.effective_message.reply_text("⚠️ Temporary error. Please try again.")
-    except: pass
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "⚠️ Temporary error. Your request failed safely. Please try again or send /start."
+            )
+    except Exception:
+        log.exception("Could not send error notice to Telegram user")
 
 telegram_ready=False
 polling_active=False
@@ -1504,13 +1521,22 @@ async def telegram_webhook(request):
     try:
         payload = await request.json()
         update = Update.de_json(payload, app_global.bot)
-        if update is not None:
-            await app_global.update_queue.put(update)
+        if update is None:
+            log.warning("Telegram webhook received an empty/unrecognized update")
+            return JSONResponse({"ok": True})
+        await app_global.update_queue.put(update)
+        log.info(
+            "Webhook update queued: update_id=%s message=%s callback=%s",
+            update.update_id,
+            bool(update.message or update.edited_message),
+            bool(update.callback_query),
+        )
         return JSONResponse({"ok": True})
     except Exception:
+        # Acknowledge only valid deliveries. A 5xx lets Telegram retry transient
+        # webhook failures instead of silently losing the user's update.
         log.exception("Webhook update handling failed")
-        # Return 200 so Telegram does not create a retry storm for malformed/duplicate deliveries.
-        return JSONResponse({"ok": True})
+        return JSONResponse({"ok": False, "error": "update handling failed"}, status_code=500)
 
 async def main():
     if not BOT_TOKEN:
