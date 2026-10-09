@@ -76,33 +76,65 @@ async def ping_cmd(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚡ Bot is online and replying instantly.")
 
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    u=update.effective_user
-    await db.upsert_user(u)
-    state.pop(u.id,None)
-    if await force_join_required(u.id):
-        await show_force_join(update.message)
+    """Always attempt to answer /start, even if an optional DB/force-join check fails."""
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or user is None:
+        log.error("/start update missing effective message/user: update_id=%s", getattr(update, "update_id", None))
         return
-    await update.message.reply_text(
-      "🏰 <b>SWIGGY PALACE</b> 👑\n\n"
-      "🍔 <b>Manual Swiggy Ordering Service</b>\n\n"
-      "Safe & reliable manual ordering support.\n"
-      "Aap apni need ke hisaab se Customer ya Seller choose karein.\n\n"
-      "🛒 <b>Become a Customer</b>\n"
-      "💸 Low-price food ordering support\n"
-      "📍 Address + cart share karein\n"
-      "💳 Final price verification ke baad payment\n"
-      "👨‍💼 Order manually Palace Admin place karega\n"
-      "📦 Order status aur Swiggy Order ID updates\n\n"
-      "🏪 <b>Become a Seller</b>\n"
-      "🤝 Swiggy Palace ke saath seller ke roop me judhein\n"
-      "🏰 Seller approval ke baad Mini Admin access\n"
-      "🛡️ Safe & reliable process\n"
-      "📱 Customers/orders ko manage karne ke liye Palace ke andar hi tools\n"
-      "💯 Bot-side commission: <b>₹0</b>\n"
-      "🚫 Idhar-udhar alag service dhoondhne ki zarurat nahi\n"
-      "🔔 Seller request direct Super Admin approval ke liye jayegi.\n\n"
-      "👇 <b>Choose your role:</b>",
-      parse_mode="HTML",reply_markup=role_menu())
+
+    state.pop(user.id, None)
+    try:
+        await db.upsert_user(user)
+    except Exception:
+        # User tracking must not prevent the main bot menu from opening.
+        log.exception("/start user upsert failed uid=%s", user.id)
+
+    try:
+        needs_join = await force_join_required(user.id)
+    except Exception:
+        # A force-join/database outage should not turn /start into a generic error.
+        log.exception("/start force-join check failed uid=%s; continuing to menu", user.id)
+        needs_join = False
+
+    if needs_join:
+        try:
+            await show_force_join(message)
+            return
+        except Exception:
+            log.exception("/start force-join prompt failed uid=%s; falling back to menu", user.id)
+
+    try:
+        await message.reply_text(
+          "🏰 <b>SWIGGY PALACE</b> 👑\n\n"
+          "🍔 <b>Manual Swiggy Ordering Service</b>\n\n"
+          "Safe & reliable manual ordering support.\n"
+          "Aap apni need ke hisaab se Customer ya Seller choose karein.\n\n"
+          "🛒 <b>Become a Customer</b>\n"
+          "💸 Low-price food ordering support\n"
+          "📍 Address + cart share karein\n"
+          "💳 Final price verification ke baad payment\n"
+          "👨‍💼 Order manually Palace Admin place karega\n"
+          "📦 Order status aur Swiggy Order ID updates\n\n"
+          "🏪 <b>Become a Seller</b>\n"
+          "🤝 Swiggy Palace ke saath seller ke roop me judhein\n"
+          "🏰 Seller approval ke baad Mini Admin access\n"
+          "🛡️ Safe & reliable process\n"
+          "📱 Customers/orders ko manage karne ke liye Palace ke andar hi tools\n"
+          "💯 Bot-side commission: <b>₹0</b>\n"
+          "🚫 Idhar-udhar alag service dhoondhne ki zarurat nahi\n"
+          "🔔 Seller request direct Super Admin approval ke liye jayegi.\n\n"
+          "👇 <b>Choose your role:</b>",
+          parse_mode="HTML", reply_markup=role_menu())
+        log.info("/start answered successfully uid=%s", user.id)
+    except Exception:
+        log.exception("/start menu send failed uid=%s", user.id)
+        # Keep the fallback plain and minimal; if Telegram itself is unavailable,
+        # the failure will be visible in Render logs instead of being swallowed.
+        try:
+            await message.reply_text("Swiggy Palace is online. Please send /start again in a few seconds.")
+        except Exception:
+            log.exception("/start fallback reply also failed uid=%s", user.id)
 
 
 async def addadmin_cmd(update,context):
