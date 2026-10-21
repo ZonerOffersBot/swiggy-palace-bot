@@ -42,6 +42,15 @@ class RepositorySanityTests(unittest.TestCase):
         self.assertIn("pg_try_advisory_lock", main)
         self.assertIn("run_single_poller(dp, bot)", main)
 
+    def test_stars_payment_rejects_failed_order_states(self):
+        payment = self.read("handlers_payment.py")
+        self.assertIn('status"] in ("pending", "paid")', payment)
+
+    def test_reconcile_retries_only_undelivered_tickets(self):
+        reconcile = self.read("services_reconcile.py")
+        self.assertIn("t.delivered_at IS NULL", reconcile)
+        self.assertIn("delivery_started_at IS NULL", reconcile)
+
     def test_parameterized_sql_used_for_user_input(self):
         payment = self.read("handlers_payment.py")
         self.assertIn("WHERE id=$1", payment)
