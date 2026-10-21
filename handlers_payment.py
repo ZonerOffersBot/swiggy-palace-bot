@@ -47,7 +47,7 @@ async def stars_paid(msg: Message, bot: Bot):
                 await notify_admins(bot,f"⚠️ Stars payment validation mismatch. order={oid} user={msg.from_user.id}")
                 return
             if order["status"]!="paid":
-                await conn.execute("UPDATE orders SET status='paid',gateway_txn_id=$1,updated_at=NOW() WHERE order_id=$2",
+                await conn.execute("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,NOW()),gateway_txn_id=$1,updated_at=NOW() WHERE order_id=$2",
                     p.telegram_payment_charge_id,oid)
     result=await atomic_create_and_deliver(bot,oid)
     if result == "delivered":
