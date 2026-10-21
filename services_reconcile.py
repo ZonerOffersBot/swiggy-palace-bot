@@ -23,9 +23,16 @@ async def _retry_paid_tickets(bot: Bot) -> None:
     # The delivery service owns its own lock/lease and idempotency guard.
     rows = await db().fetch(
         """
-        SELECT order_id FROM orders
-        WHERE status = 'paid'
-        ORDER BY updated_at
+        SELECT o.order_id
+        FROM orders o
+        LEFT JOIN tickets t ON t.order_id = o.order_id
+        WHERE o.status = 'paid'
+          AND (t.ticket_id IS NULL OR (
+              t.delivered_at IS NULL
+              AND (t.delivery_started_at IS NULL
+                   OR t.delivery_started_at < NOW() - INTERVAL '10 minutes')
+          ))
+        ORDER BY o.updated_at, o.created_at
         LIMIT $1
         """,
         BATCH_SIZE,
