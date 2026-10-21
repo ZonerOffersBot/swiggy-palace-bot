@@ -7,6 +7,11 @@ from config import EVENT_NAME, EVENT_DATE, VENUE, TICKET_PRICE_INR, TICKET_PRICE
 from db import db
 router = Router()
 
+@router.message(Command("cancel"))
+async def cancel_cmd(msg: Message, state: FSMContext):
+    await state.clear()
+    await msg.answer("Cancelled. Main menu par wapas aane ke liye /start bhejein.")
+
 def home_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎟️ Book Ticket", callback_data="menu:buy")],
