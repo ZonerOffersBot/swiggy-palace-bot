@@ -60,3 +60,5 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 
 -- Delivery lease prevents duplicate sends when multiple workers reconcile the same order.
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS delivery_started_at TIMESTAMPTZ;
+-- Payment reconciliation timestamps (safe additive migration).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
