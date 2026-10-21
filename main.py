@@ -7,6 +7,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN, PORT, validate_config
 from db import init_db, close_db
 from handlers_user import router as user_router
+from middlewares import ThrottlingMiddleware, ForceJoinMiddleware
 from handlers_payment import router as payment_router
 from handlers_admin import router as admin_router
 from services_reconcile import reconcile_loop
@@ -23,6 +24,10 @@ async def main():
     await init_db()
     bot=Bot(BOT_TOKEN,default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp=Dispatcher(storage=MemoryStorage())
+    dp.message.middleware(ThrottlingMiddleware())
+    dp.callback_query.middleware(ThrottlingMiddleware())
+    dp.message.middleware(ForceJoinMiddleware())
+    dp.callback_query.middleware(ForceJoinMiddleware())
     dp.include_router(admin_router)
     dp.include_router(payment_router)
     dp.include_router(user_router)
