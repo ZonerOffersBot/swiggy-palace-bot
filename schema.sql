@@ -81,3 +81,31 @@ INSERT INTO user_menu(key,label,position,is_active) VALUES
  ('myticket','🎫 My Tickets',2,TRUE),
  ('help','🆘 Help / Support',3,TRUE)
 ON CONFLICT(key) DO NOTHING;
+
+-- Ticket tier catalog; amounts are stored in INR paise and Stars units.
+CREATE TABLE IF NOT EXISTS ticket_types (
+  id BIGSERIAL PRIMARY KEY,
+  key TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  price_inr BIGINT NOT NULL CHECK (price_inr > 0),
+  price_stars BIGINT NOT NULL CHECK (price_stars > 0),
+  position INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ticket_type_id BIGINT REFERENCES ticket_types(id);
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_type_id BIGINT REFERENCES ticket_types(id);
+CREATE TABLE IF NOT EXISTS ticket_files (
+  id BIGSERIAL PRIMARY KEY,
+  ticket_type_id BIGINT NOT NULL REFERENCES ticket_types(id),
+  file_type TEXT NOT NULL CHECK (file_type IN ('document','photo','text')),
+  telegram_file_id TEXT,
+  text_content TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO ticket_types(key,label,price_inr,price_stars,position,is_active)
+VALUES ('general','General Ticket',49900,50,1,TRUE)
+ON CONFLICT(key) DO NOTHING;
