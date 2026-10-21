@@ -109,3 +109,27 @@ CREATE TABLE IF NOT EXISTS ticket_files (
 INSERT INTO ticket_types(key,label,price_inr,price_stars,position,is_active)
 VALUES ('general','General Ticket',49900,50,1,TRUE)
 ON CONFLICT(key) DO NOTHING;
+
+
+-- Additive compatibility fields for the extended admin panel. Existing rows are preserved.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS gateway_order_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_type_id BIGINT REFERENCES ticket_types(id);
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_checked_in BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS checked_in_by BIGINT;
+UPDATE tickets SET is_checked_in = (checked_in_at IS NOT NULL);
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replied_by BIGINT;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS message TEXT;
+UPDATE support_tickets SET message = COALESCE(message, query, '') WHERE message IS NULL;
+ALTER TABLE force_channels ADD COLUMN IF NOT EXISTS invite_link TEXT;
+ALTER TABLE force_channels ADD COLUMN IF NOT EXISTS added_by BIGINT;
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS added_by BIGINT;
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS file_id TEXT;
+ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS mime_type TEXT;
+ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS file_size BIGINT;
+ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS caption TEXT;
+ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS added_by BIGINT;
+UPDATE ticket_files SET file_id = COALESCE(file_id, telegram_file_id) WHERE file_id IS NULL;
