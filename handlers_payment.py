@@ -54,7 +54,7 @@ async def choose_payment(cb: CallbackQuery):
         return
     kb = InlineKeyboardBuilder()
     kb.button(text=f"⭐ Telegram Stars ({tier['price_stars']})", callback_data=f"pay:stars:{tier_id}")
-    kb.button(text=f"📱 UPI / PhonePe ({_tier_price_label(tier['price_inr'])})", callback_data=f"pay:phonepe:{tier_id}")
+    kb.button(text=f"📱 UPI / PhonePe (temporarily unavailable)", callback_data=f"pay:phonepe:{tier_id}")
     kb.button(text="⬅️ Back", callback_data="menu:buy")
     kb.adjust(1)
     await cb.message.edit_text(
@@ -140,6 +140,7 @@ async def stars_paid(msg: Message, bot: Bot):
                 order
                 and order["user_id"] == msg.from_user.id
                 and order["gateway"] == "stars"
+                and order["status"] in ("pending", "paid")
                 and order["currency"] == "XTR"
                 and order["amount"] == payment.total_amount
                 and payment.currency == "XTR"
