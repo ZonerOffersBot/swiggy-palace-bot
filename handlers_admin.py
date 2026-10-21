@@ -52,8 +52,8 @@ async def ticket_info(msg: Message):
         return
     status = "🔴 USED" if row["checked_in_at"] else ("🟢 VALID" if row["status"] == "paid" and row["delivered_at"] else "🟡 PENDING")
     await msg.answer(
-        f"🎟 <b>Ticket Info</b>\\nCode: <code>{row['ticket_code']}</code>\\nStatus: {status}"
-        f"\\nPayment: {row['status']}\\nAmount: {row['amount']} {row['currency']}"
-        f"\\nUser: <code>{row['user_id']}</code>\\nIssued: {row['created_at']}"
-        f"\\nChecked in: {row['checked_in_at'] or '—'}"
+        f"🎟 <b>Ticket Info</b>\nCode: <code>{row['ticket_code']}</code>\nStatus: {status}"
+        f"\nPayment: {row['status']}\nAmount: {row['amount']} {row['currency']}"
+        f"\nUser: <code>{row['user_id']}</code>\nIssued: {row['created_at']}"
+        f"\nChecked in: {row['checked_in_at'] or '—'}"
     )
