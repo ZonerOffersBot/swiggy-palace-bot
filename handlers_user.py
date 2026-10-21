@@ -56,3 +56,11 @@ async def my_tickets(cb: CallbackQuery):
 @router.message(Command("myid"))
 async def myid(msg: Message):
     await msg.answer(f"Your Telegram ID: <code>{msg.from_user.id}</code>")
+
+
+@router.callback_query(F.data == "forcejoin:verify")
+async def forcejoin_verify(cb: CallbackQuery):
+    # The ForceJoinMiddleware runs before this handler and only lets it through when every
+    # configured channel membership was verified.
+    await cb.answer("✅ Membership verify ho gaya!", show_alert=True)
+    await cb.message.answer("Ab bot use kar sakte hain. /start dabayein.")
