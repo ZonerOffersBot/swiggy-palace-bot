@@ -19,6 +19,27 @@ async def serve_web():
     server=uvicorn.Server(uvicorn.Config(web_app,host="0.0.0.0",port=PORT,log_level="info"))
     await server.serve()
 
+async def run_single_poller(dp, bot):
+    # PostgreSQL session lock prevents duplicate getUpdates polling across replicas.
+    from db import db
+    conn = await db().acquire()
+    acquired = False
+    try:
+        acquired = await conn.fetchval("SELECT pg_try_advisory_lock(731946220)")
+        if not acquired:
+            logging.warning("Another instance owns Telegram polling; this instance will keep health/reconcile services only.")
+            await asyncio.Event().wait()
+            return
+        await dp.start_polling(bot, handle_signals=False, close_bot_session=False)
+    finally:
+        if acquired:
+            try:
+                await conn.execute("SELECT pg_advisory_unlock(731946220)")
+            except Exception:
+                logging.exception("Could not release polling advisory lock")
+        await db().release(conn)
+
+
 async def main():
     validate_config()
     await init_db()
@@ -32,7 +53,7 @@ async def main():
     dp.include_router(payment_router)
     dp.include_router(user_router)
     tasks=[
-      asyncio.create_task(dp.start_polling(bot,handle_signals=False,close_bot_session=False),name="telegram-polling"),
+      asyncio.create_task(run_single_poller(dp, bot),name="telegram-polling"),
       asyncio.create_task(serve_web(),name="web-server"),
       asyncio.create_task(reconcile_loop(bot),name="ticket-reconcile"),
     ]
