@@ -37,3 +37,16 @@ async def get_all_admin_ids() -> set[int]:
     except Exception:
         log.exception("Could not load admin IDs")
     return ids
+
+
+async def set_setting(key: str, value: str) -> None:
+    await db().execute(
+        """INSERT INTO bot_settings(key, value, updated_at) VALUES($1, $2, NOW())
+           ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()""",
+        key, value,
+    )
+
+
+# Compatibility aliases for admin handlers from the expanded ticket workflow.
+async def IsAdmin(user_id: int) -> bool:
+    return await is_admin(user_id)
