@@ -50,6 +50,8 @@ async def stars_paid(msg: Message, bot: Bot):
                 await conn.execute("UPDATE orders SET status='paid',gateway_txn_id=$1,updated_at=NOW() WHERE order_id=$2",
                     p.telegram_payment_charge_id,oid)
     result=await atomic_create_and_deliver(bot,oid)
+    if result == "delivered":
+        await notify_admins(bot, f"💰 <b>Telegram Stars payment received</b>\\n⭐ {p.total_amount} Stars\\n👤 {msg.from_user.full_name} (<code>{msg.from_user.id}</code>)\\n🆔 Order: <code>{str(oid)[:8]}</code>")
     if result!="delivered" and result!="already_delivered":
         await msg.answer("Payment successful hai, lekin ticket delivery pending hai. Please wait; system retry karega.")
         await notify_admins(bot,f"Ticket delivery needs retry: order {oid}, state={result}")
