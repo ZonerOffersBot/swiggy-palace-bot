@@ -19,3 +19,21 @@ async def notify_admins(bot: Bot, text: str):
 
 async def log_audit(user_id: int, action: str, details: dict | None = None):
     log.info("admin_action user=%s action=%s details=%s", user_id, action, json.dumps(details or {}, ensure_ascii=False, default=str))
+
+
+async def get_setting(key: str, default: str = "") -> str:
+    try:
+        value = await db().fetchval("SELECT value FROM bot_settings WHERE key=$1", key)
+        return default if value is None else str(value)
+    except Exception:
+        log.exception("Could not read setting %s", key)
+        return default
+
+
+async def get_all_admin_ids() -> set[int]:
+    ids = set(ADMIN_IDS)
+    try:
+        ids.update(int(r["telegram_id"]) for r in await db().fetch("SELECT telegram_id FROM admins"))
+    except Exception:
+        log.exception("Could not load admin IDs")
+    return ids
