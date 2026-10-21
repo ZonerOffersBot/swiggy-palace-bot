@@ -37,7 +37,7 @@ class ForceJoinMiddleware(BaseMiddleware):
             command = text.split(maxsplit=1)[0].split("@", 1)[0] if text else ""
             if command in self.EXEMPT:
                 return await handler(event, data)
-        rows = await db().fetch("SELECT channel_id, channel_username FROM force_channels WHERE is_active=TRUE")
+        rows = await db().fetch("SELECT channel_id, channel_username, invite_link FROM force_channels WHERE is_active=TRUE")
         if not rows:
             return await handler(event, data)
         pending = []
@@ -58,6 +58,8 @@ class ForceJoinMiddleware(BaseMiddleware):
             username = (row["channel_username"] or "").lstrip("@")
             if username:
                 kb.button(text=f"📢 Join @{username}", url=f"https://t.me/{username}")
+            elif row["invite_link"]:
+                kb.button(text="📢 Join required channel", url=row["invite_link"])
         kb.button(text="✅ I Joined — Verify", callback_data="forcejoin:verify")
         kb.adjust(1)
         text = "🔒 Bot use karne ke liye pehle required channel(s) join karein."
