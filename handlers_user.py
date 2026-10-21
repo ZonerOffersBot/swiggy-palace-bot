@@ -116,17 +116,6 @@ async def support_submit(msg: Message, state: FSMContext, bot: Bot):
             log.exception("Could not notify admin %s about support ticket %s", admin_id, tid)
 
 
-@router.callback_query(F.data == "menu:buy")
-async def buy_menu(cb: CallbackQuery):
-    await cb.answer()
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"Pay ₹{TICKET_PRICE_INR} with PhonePe", callback_data="pay:phonepe")],
-        [InlineKeyboardButton(text=f"Pay ⭐ {TICKET_PRICE_STARS} Telegram Stars", callback_data="pay:stars")],
-        [InlineKeyboardButton(text="⬅️ Back", callback_data="user:home")],
-    ])
-    await cb.message.answer(f"Choose payment method for {EVENT_NAME}:", reply_markup=kb)
-
-
 @router.callback_query(F.data == "menu:myticket")
 async def my_tickets(cb: CallbackQuery):
     rows = await db().fetch(
