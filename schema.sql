@@ -62,3 +62,22 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS delivery_started_at TIMESTAMPTZ;
 -- Payment reconciliation timestamps (safe additive migration).
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+
+-- User-menu and support workflow additions (additive, preserves existing records).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name TEXT;
+UPDATE users SET full_name = COALESCE(full_name, first_name, '') WHERE full_name IS NULL;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS full_name TEXT;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS query TEXT;
+UPDATE support_tickets SET query = COALESCE(query, message, '') WHERE query IS NULL;
+CREATE TABLE IF NOT EXISTS user_menu (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+INSERT INTO user_menu(key,label,position,is_active) VALUES
+ ('buy','🎟️ Book Ticket',1,TRUE),
+ ('myticket','🎫 My Tickets',2,TRUE),
+ ('help','🆘 Help / Support',3,TRUE)
+ON CONFLICT(key) DO NOTHING;
