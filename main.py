@@ -44,6 +44,9 @@ async def main():
     validate_config()
     await init_db()
     bot=Bot(BOT_TOKEN,default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    # This bot uses long polling; remove any stale Telegram webhook while preserving queued updates.
+    # PhonePe callbacks use the separate FastAPI route and are unaffected.
+    await bot.delete_webhook(drop_pending_updates=False)
     dp=Dispatcher(storage=MemoryStorage())
     dp.message.middleware(ThrottlingMiddleware())
     dp.callback_query.middleware(ThrottlingMiddleware())
