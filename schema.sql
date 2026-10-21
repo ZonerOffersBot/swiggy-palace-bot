@@ -57,3 +57,6 @@ CREATE TABLE IF NOT EXISTS bot_settings (
   value TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Delivery lease prevents duplicate sends when multiple workers reconcile the same order.
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS delivery_started_at TIMESTAMPTZ;
