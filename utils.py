@@ -7,11 +7,11 @@ log = logging.getLogger(__name__)
 
 async def is_admin(user_id: int) -> bool:
     if user_id in ADMIN_IDS: return True
-    return bool(await db().fetchval("SELECT EXISTS(SELECT 1 FROM admins WHERE telegram_id=$1)", user_id))
+    return bool(await db().fetchval("SELECT EXISTS(SELECT 1 FROM admins WHERE telegram_id=$1 AND COALESCE(is_active, TRUE)=TRUE)", user_id))
 
 async def notify_admins(bot: Bot, text: str):
     ids = set(ADMIN_IDS)
-    try: ids.update(r["telegram_id"] for r in await db().fetch("SELECT telegram_id FROM admins"))
+    try: ids.update(r["telegram_id"] for r in await db().fetch("SELECT telegram_id FROM admins WHERE COALESCE(is_active, TRUE)=TRUE"))
     except Exception: log.exception("Could not load database admins")
     for uid in ids:
         try: await bot.send_message(uid, text)
