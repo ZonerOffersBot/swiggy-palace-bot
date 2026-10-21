@@ -34,7 +34,7 @@ async def checkin(msg: Message):
                 await msg.answer("Ticket invalid hai ya payment/delivery confirm nahi hai."); return
             if row["checked_in_at"]:
                 await msg.answer("Ticket pehle hi check-in ho chuka hai."); return
-            await conn.execute("UPDATE tickets SET checked_in_at=NOW(),checked_in_by=$1 WHERE ticket_id=$2",msg.from_user.id,row["ticket_id"])
+            await conn.execute("UPDATE tickets SET checked_in_at=NOW(),checked_in_by=$1,is_checked_in=TRUE WHERE ticket_id=$2",msg.from_user.id,row["ticket_id"])
     await msg.answer(f"✅ Check-in successful: <code>{code}</code>")
 
 @router.message(Command("info"))
