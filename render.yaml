@@ -1,20 +1,37 @@
 services:
   - type: web
-    name: swiggy-palace-bot
+    name: swiggy-palace-ticket-bot
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
+    healthCheckPath: /health
     envVars:
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_IDS
         sync: false
-      - key: OWNER_ID
+      - key: DATABASE_URL
         sync: false
-      - key: DATABASE_PATH
-        value: palace.db
-      - key: PORT
-        value: 10000
-      - key: WEBHOOK_URL
-        value: https://swiggy-palace-bot.onrender.com
+      - key: PHONEPE_CLIENT_ID
+        sync: false
+      - key: PHONEPE_CLIENT_SECRET
+        sync: false
+      - key: PHONEPE_CLIENT_VERSION
+        value: "1"
+      - key: PHONEPE_ENV
+        value: SANDBOX
+      - key: PHONEPE_MERCHANT_ID
+        sync: false
+      - key: WEBHOOK_BASE_URL
+        sync: false
+      - key: EVENT_NAME
+        value: My Live Show
+      - key: EVENT_DATE
+        value: "2026-12-15 19:00"
+      - key: VENUE
+        value: Mumbai
+      - key: TICKET_PRICE_INR
+        value: "499"
+      - key: TICKET_PRICE_STARS
+        value: "50"
