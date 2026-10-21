@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS tickets (
   user_id BIGINT NOT NULL REFERENCES users(telegram_id),
   ticket_code TEXT NOT NULL UNIQUE,
   pdf_file_id TEXT,
+  is_delivered BOOLEAN NOT NULL DEFAULT FALSE,
+  delivered_to BIGINT,
   delivered_at TIMESTAMPTZ,
   checked_in_at TIMESTAMPTZ,
   checked_in_by BIGINT,
@@ -60,6 +62,9 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 
 -- Delivery lease prevents duplicate sends when multiple workers reconcile the same order.
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS delivery_started_at TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_delivered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS delivered_to BIGINT;
+UPDATE tickets SET is_delivered = TRUE WHERE delivered_at IS NOT NULL;
 -- Payment reconciliation timestamps (safe additive migration).
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
 

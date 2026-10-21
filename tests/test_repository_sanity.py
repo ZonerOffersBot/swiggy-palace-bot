@@ -18,6 +18,8 @@ class RepositorySanityTests(unittest.TestCase):
             "create table if not exists ticket_types",
             "create table if not exists ticket_files",
             "delivery_started_at",
+            "is_delivered",
+            "delivered_to",
             "ticket_type_id",
             "is_checked_in",
             "create table if not exists user_menu",
@@ -25,6 +27,13 @@ class RepositorySanityTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, schema)
+
+    def test_ticket_delivery_includes_metadata_and_tier_files(self):
+        service = self.read("services_ticket.py")
+        self.assertIn("ticket_type_id=$1 AND is_active=TRUE", service)
+        self.assertIn("metadata.json", service)
+        self.assertIn("is_delivered=TRUE", service)
+        self.assertIn("delivered_to=$2", service)
 
     def test_only_tier_checkout_owns_buy_callback(self):
         payment = self.read("handlers_payment.py")
