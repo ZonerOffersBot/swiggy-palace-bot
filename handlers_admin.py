@@ -94,6 +94,10 @@ async def support_reply_send(msg: Message, state: FSMContext, bot: Bot):
     if not await is_admin(msg.from_user.id):
         await state.clear()
         return
+    if (msg.text or "").strip().split(maxsplit=1)[0].split("@", 1)[0] == "/cancel":
+        await state.clear()
+        await msg.answer("Reply cancelled.")
+        return
     reply_text = (msg.text or "").strip()[:2000]
     if not reply_text:
         await msg.answer("Text reply bhejein. Cancel: /cancel")
