@@ -38,9 +38,9 @@ async def atomic_create_and_deliver(bot: Bot, order_id):
             if not ticket:
                 code = "EVT-" + "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(10))
                 ticket = await conn.fetchrow(
-                    """INSERT INTO tickets(ticket_id,order_id,user_id,ticket_code)
-                       VALUES($1,$2,$3,$4) RETURNING *""",
-                    uuid.uuid4(), order_id, order["user_id"], code
+                    """INSERT INTO tickets(ticket_id,order_id,user_id,ticket_code,ticket_type_id)
+                       VALUES($1,$2,$3,$4,$5) RETURNING *""",
+                    uuid.uuid4(), order_id, order["user_id"], code, order["ticket_type_id"]
                 )
             # Atomic delivery lease. Only one worker can claim an undelivered ticket.
             claimed = await conn.fetchrow(
