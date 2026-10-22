@@ -308,7 +308,8 @@ class AdminEditFSM(StatesGroup):
     add_admin = State()
     remove_admin = State()
     add_force = State()
-    add_file = State()\n    add_promo = State()
+    add_file = State()
+    add_promo = State()
 
 
 @router.callback_query(F.data == "admin:add_promo")
