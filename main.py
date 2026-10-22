@@ -10,6 +10,7 @@ from handlers_user import router as user_router
 from middlewares import ThrottlingMiddleware, ForceJoinMiddleware
 from handlers_payment import router as payment_router
 from handlers_admin import router as admin_router
+from handlers_wallet import router as wallet_router
 from services_reconcile import reconcile_loop
 from webhook_server import app as web_app
 
@@ -63,6 +64,7 @@ async def main():
     dp.message.middleware(ForceJoinMiddleware())
     dp.callback_query.middleware(ForceJoinMiddleware())
     dp.include_router(admin_router)
+    dp.include_router(wallet_router)
     dp.include_router(payment_router)
     dp.include_router(user_router)
     tasks=[
