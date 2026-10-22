@@ -179,6 +179,11 @@ CREATE TABLE IF NOT EXISTS wallet_deposits (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(utr)
 );
+
+-- Compatibility migration for databases created before deposit-review audit fields existed.
+-- Keeps all existing deposit statuses unchanged; unreviewed requests remain pending.
+ALTER TABLE wallet_deposits ADD COLUMN IF NOT EXISTS reviewed_by BIGINT;
+ALTER TABLE wallet_deposits ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 CREATE TABLE IF NOT EXISTS wallet_transactions (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(telegram_id),
