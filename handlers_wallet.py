@@ -404,7 +404,7 @@ async def admin_wallet_home(cb: CallbackQuery):
     if not await is_admin(cb.from_user.id):
         await cb.answer("Admin only.", show_alert=True); return
     await cb.answer()
-    await cb.message.answer("💰 <b>Wallet Admin</b>\\nDeposit approvals, transaction history aur PhonePe QR.", reply_markup=admin_kb())
+    await cb.message.answer("💰 <b>Wallet Admin</b>\nDeposit approvals, transaction history aur PhonePe QR.", reply_markup=admin_kb())
 
 
 @router.callback_query(F.data == "admin:wallet_inventory")
