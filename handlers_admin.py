@@ -15,6 +15,7 @@ def admin_keyboard():
     kb = InlineKeyboardBuilder()
     buttons = [
         ("📊 Stats", "admin:stats"), ("🎟 Ticket Types", "admin:tiers"),
+        ("🎁 Promo Codes", "admin:promos"),
         ("📁 Ticket Files", "admin:files"), ("⚙️ Settings", "admin:settings"),
         ("🧭 User Menu", "admin:menu"), ("📢 Force Join", "admin:force"),
         ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
@@ -54,7 +55,7 @@ async def admin_panel(msg: Message):
         await msg.answer("⚠️ Admin panel database error. Render Logs mein /admin ke baad wali traceback check karein.")
 
 
-@router.callback_query(F.data.in_({"admin:home", "admin:stats", "admin:tiers", "admin:files", "admin:settings", "admin:menu", "admin:force", "admin:admins", "admin:support"}))
+@router.callback_query(F.data.in_({"admin:home", "admin:stats", "admin:tiers", "admin:files", "admin:settings", "admin:menu", "admin:force", "admin:admins", "admin:support", "admin:promos"}))
 async def admin_navigation(cb: CallbackQuery):
     if not await is_admin(cb.from_user.id):
         await cb.answer("Admin only.", show_alert=True)
@@ -71,6 +72,17 @@ async def admin_navigation(cb: CallbackQuery):
             for r in rows:
                 kb.button(text=f"✏️ Edit {r['label'][:24]}", callback_data=f"admin:edit_tier:{r['id']}")
                 kb.button(text=f"📎 Add file: {r['label'][:18]}", callback_data=f"admin:add_file:{r['id']}")
+            kb.button(text="⬅️ Admin home", callback_data="admin:home")
+            kb.adjust(1)
+            section_markup = kb.as_markup()
+        elif section == "promos":
+            rows = await db().fetch("SELECT code,max_uses,uses_count,is_active,created_at FROM promo_codes ORDER BY created_at DESC LIMIT 30")
+            text = "🎁 <b>Free Ticket Promo Codes</b>\\nCode use karne par eligible user ko free ticket milega.\\n" + ("\\n".join(f"• <code>{r['code']}</code> — {r['uses_count']}/{r['max_uses'] if r['max_uses'] is not None else '∞'} used — {'Active' if r['is_active'] else 'Disabled'}" for r in rows) or "Abhi promo code nahi bana.")
+            kb = InlineKeyboardBuilder()
+            kb.button(text="➕ Create promo code", callback_data="admin:add_promo")
+            for r in rows:
+                action = "disable" if r["is_active"] else "enable"
+                kb.button(text=f"{'⏸ Disable' if r['is_active'] else '▶️ Enable'} {r['code'][:20]}", callback_data=f"admin:{action}_promo:{r['code']}")
             kb.button(text="⬅️ Admin home", callback_data="admin:home")
             kb.adjust(1)
             section_markup = kb.as_markup()
@@ -296,7 +308,72 @@ class AdminEditFSM(StatesGroup):
     add_admin = State()
     remove_admin = State()
     add_force = State()
-    add_file = State()
+    add_file = State()\n    add_promo = State()
+
+
+@router.callback_query(F.data == "admin:add_promo")
+async def add_promo_start(cb: CallbackQuery, state: FSMContext):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    await state.set_state(AdminEditFSM.add_promo)
+    await cb.answer()
+    await cb.message.answer(
+        "🎁 Promo code banayein. Format: <code>CODE | max uses</code>\\n"
+        "Example: <code>FREEENTRY | 1</code>\\n"
+        "Max uses mein 1 ya usse zyada number dein. Har user ek code sirf ek baar redeem kar sakta hai.\\n"
+        "Cancel: /cancel"
+    )
+
+
+@router.message(AdminEditFSM.add_promo, F.text)
+async def add_promo_save(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        await state.clear()
+        return
+    raw = (msg.text or "").strip()
+    if raw.split(maxsplit=1)[0].split("@", 1)[0] == "/cancel":
+        await state.clear()
+        await msg.answer("Promo creation cancelled.")
+        return
+    parts = [p.strip() for p in raw.split("|")]
+    if len(parts) != 2 or not parts[0] or not parts[1].isdigit() or int(parts[1]) < 1:
+        await msg.answer("Format: CODE | max uses\\nExample: FREEENTRY | 1")
+        return
+    code = parts[0].upper()
+    if len(code) > 40 or not all(ch.isalnum() or ch in "_-" for ch in code):
+        await msg.answer("Code mein sirf A-Z, 0-9, underscore ya hyphen use karein.")
+        return
+    try:
+        await db().execute(
+            "INSERT INTO promo_codes(code,max_uses,created_by) VALUES($1,$2,$3)",
+            code, int(parts[1]), msg.from_user.id
+        )
+    except Exception:
+        log.exception("Could not create promo code %s", code)
+        await msg.answer("Yeh code pehle se maujood hai ya save nahi hua. Naya code try karein.")
+        return
+    await state.clear()
+    await msg.answer(f"✅ Promo code <code>{code}</code> create ho gaya. Max redemptions: {parts[1]}. Ab aap ise users ko de sakte hain.")
+
+
+@router.callback_query(F.data.startswith(("admin:disable_promo:", "admin:enable_promo:")))
+async def toggle_promo(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    action, code = cb.data.rsplit(":", 1)
+    active = action == "admin:enable_promo"
+    updated = await db().fetchval(
+        "UPDATE promo_codes SET is_active=$1 WHERE code=$2 RETURNING code",
+        active, code
+    )
+    if not updated:
+        await cb.answer("Promo code nahi mila.", show_alert=True)
+        return
+    await cb.answer("Promo code enabled." if active else "Promo code disabled.")
+    if cb.message:
+        await cb.message.answer("Promo code status update ho gaya. Admin → Promo Codes dobara kholkar verify karein.")
 
 
 @router.callback_query(F.data.startswith("admin:edit_tier:"))
