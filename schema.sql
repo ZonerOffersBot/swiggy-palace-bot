@@ -136,8 +136,10 @@ UPDATE ticket_files SET file_id = COALESCE(file_id, telegram_file_id) WHERE file
 
 -- Free-ticket promo codes, redeemed atomically with order creation.
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_amount_check;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_amount_nonnegative;
 ALTER TABLE orders ADD CONSTRAINT orders_amount_nonnegative CHECK (amount >= 0);
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_gateway_check;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_gateway_allowed;
 ALTER TABLE orders ADD CONSTRAINT orders_gateway_allowed CHECK (gateway IN ('phonepe','stars','promo'));
 CREATE TABLE IF NOT EXISTS promo_codes (
   code TEXT PRIMARY KEY,
