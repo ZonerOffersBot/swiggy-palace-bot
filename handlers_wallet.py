@@ -266,7 +266,7 @@ async def purchase_quantity(msg: Message, state: FSMContext, bot: Bot):
                     return
                 rows = await conn.fetch(
                     """SELECT id FROM digital_inventory WHERE category_id=$1 AND status='available'
-                       ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $2""", cat_id, qty
+                       ORDER BY id LIMIT $2 FOR UPDATE SKIP LOCKED""", cat_id, qty
                 )
                 if len(rows) < qty:
                     await msg.answer("Itna stock available nahi hai. Available: " + str(len(rows)) + ".")
