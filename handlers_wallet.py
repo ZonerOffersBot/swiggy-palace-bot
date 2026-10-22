@@ -31,11 +31,18 @@ def money(paise):
 
 def admin_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="💰 Deposits", callback_data="admin:wallet_deposits")
-    kb.button(text="📁 JSON Inventory", callback_data="admin:wallet_inventory")
-    kb.button(text="💵 Category Prices", callback_data="admin:wallet_prices")
-    kb.button(text="🧾 User / Transaction History", callback_data="admin:wallet_history")
+    kb.button(text="💰 Deposit Requests", callback_data="admin:wallet_deposits")
+    kb.button(text="🧾 Transaction History", callback_data="admin:wallet_history")
     kb.button(text="📷 Set PhonePe QR", callback_data="admin:wallet_qr")
+    kb.button(text="⬅️ Admin Home", callback_data="admin:home")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def json_shop_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📂 Add JSON Files", callback_data="admin:wallet_inventory")
+    kb.button(text="💵 Edit Category Prices", callback_data="admin:wallet_prices")
     kb.button(text="⬅️ Admin Home", callback_data="admin:home")
     kb.adjust(1)
     return kb.as_markup()
@@ -396,7 +403,7 @@ async def admin_wallet_home(cb: CallbackQuery):
     if not await is_admin(cb.from_user.id):
         await cb.answer("Admin only.", show_alert=True); return
     await cb.answer()
-    await cb.message.answer("💼 <b>Wallet & JSON Admin</b>", reply_markup=admin_kb())
+    await cb.message.answer("💰 <b>Wallet Admin</b>\\nDeposit approvals, transaction history aur PhonePe QR.", reply_markup=admin_kb())
 
 
 @router.callback_query(F.data == "admin:wallet_inventory")
@@ -411,7 +418,8 @@ async def admin_inventory(cb: CallbackQuery):
         text += "\n" + c["label"] + " — " + str(count) + " available — " + ("Active" if c["is_active"] else "Disabled")
         kb.button(text="➕ Add to " + c["label"][:22], callback_data="admin:inventory_add:" + str(c["id"]))
         kb.button(text="📋 View stock " + c["label"][:18], callback_data="admin:inventory_view:" + str(c["id"]))
-    kb.button(text="⬅️ Wallet Admin", callback_data="admin:wallet_home")
+    kb.button(text="💵 Edit Category Prices", callback_data="admin:wallet_prices")
+    kb.button(text="⬅️ Admin Home", callback_data="admin:home")
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer(text, reply_markup=kb.as_markup())
@@ -586,9 +594,40 @@ async def qr_upload_save(msg: Message, state: FSMContext):
 async def history_start(cb: CallbackQuery, state: FSMContext):
     if not await is_admin(cb.from_user.id):
         await cb.answer("Admin only.", show_alert=True); return
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🕒 Recent", callback_data="admin:wallet_history_recent")
+    kb.button(text="🔎 Find Out User", callback_data="admin:wallet_history_find")
+    kb.button(text="⬅️ Wallet Admin", callback_data="admin:wallet_home")
+    kb.adjust(1)
+    await cb.answer()
+    await cb.message.answer("🧾 <b>Transaction History</b>\\nRecent transactions dekhein ya Telegram ID / username / naam se user find karein.", reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data == "admin:wallet_history_find")
+async def history_find_start(cb: CallbackQuery, state: FSMContext):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True); return
     await state.set_state(WalletFSM.history_search)
     await cb.answer()
-    await cb.message.answer("User ka Telegram ID, username ya naam bhejein. Recent transactions ke liye ALL likhein. Cancel: /cancel")
+    await cb.message.answer("Find Out: Telegram user ID, @username ya naam bhejein. Cancel: /cancel")
+
+
+@router.callback_query(F.data == "admin:wallet_history_recent")
+async def history_recent(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True); return
+    tx = await db().fetch("""SELECT t.*,t.details::text AS details_text,u.full_name,u.username FROM wallet_transactions t JOIN users u ON u.telegram_id=t.user_id ORDER BY t.id DESC LIMIT 15""")
+    deposits = await db().fetch("""SELECT d.*,u.full_name,u.username FROM wallet_deposits d JOIN users u ON u.telegram_id=d.user_id ORDER BY d.created_at DESC LIMIT 10""")
+    text = "🕒 <b>Recent Transactions</b>\\n"
+    for r in tx:
+        sign = "+" if r["amount_paise"] > 0 else ""
+        text += "\\n#" + str(r["id"]) + " | " + (r["full_name"] or "Unknown") + " | @" + (r["username"] or "—") + "\\nID: <code>" + str(r["user_id"]) + "</code>\\n" + r["kind"] + ": " + sign + money(r["amount_paise"]) + " | Balance: " + money(r["balance_after_paise"]) + "\\nRef: <code>" + r["reference"][:35] + "</code> | " + str(r["created_at"]) + "\\n"
+    if deposits:
+        text += "\\n<b>Recent Deposit Requests</b>\\n"
+        for d in deposits:
+            text += "\\nDeposit #" + str(d["id"]) + " | " + (d["full_name"] or "Unknown") + " | ID <code>" + str(d["user_id"]) + "</code>\\n" + money(d["amount_paise"]) + " | " + d["status"] + " | UTR: " + (d["utr"] or "—") + "\\n"
+    await cb.answer()
+    await cb.message.answer(text[:4000], reply_markup=admin_kb())
 
 
 @router.message(WalletFSM.history_search, F.text)
