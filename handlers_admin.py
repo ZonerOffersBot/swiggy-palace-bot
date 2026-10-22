@@ -2,6 +2,7 @@ import logging
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from config import EVENT_NAME
@@ -10,30 +11,88 @@ from utils import is_admin
 log = logging.getLogger(__name__)
 router=Router()
 
+def admin_keyboard():
+    kb = InlineKeyboardBuilder()
+    buttons = [
+        ("📊 Stats", "admin:stats"), ("🎟 Ticket Types", "admin:tiers"),
+        ("📁 Ticket Files", "admin:files"), ("⚙️ Settings", "admin:settings"),
+        ("🧭 User Menu", "admin:menu"), ("📢 Force Join", "admin:force"),
+        ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
+        ("🔄 Refresh", "admin:home"),
+    ]
+    for label, data in buttons:
+        kb.button(text=label, callback_data=data)
+    kb.adjust(2, 2, 2, 2, 1)
+    return kb.as_markup()
+
+
+async def admin_home_text():
+    users = await db().fetchval("SELECT COUNT(*) FROM users")
+    orders = await db().fetchval("SELECT COUNT(*) FROM orders")
+    paid = await db().fetchval("SELECT COUNT(*) FROM orders WHERE status='paid'")
+    tickets = await db().fetchval("SELECT COUNT(*) FROM tickets")
+    return (f"🛠️ <b>{EVENT_NAME} Admin Panel</b>\\n\\n"
+            f"👥 Users: {users}\\n🧾 Orders: {orders}\\n"
+            f"✅ Paid orders: {paid}\\n🎟 Tickets issued: {tickets}\\n\\n"
+            "Neeche kisi section ko select karein.")
+
+
 @router.message(Command("admin"))
 async def admin_panel(msg: Message):
-    # Give a clear diagnostic instead of silently ignoring /admin when ADMIN_IDS is wrong.
     if not await is_admin(msg.from_user.id):
         await msg.answer(
-            "⛔ Admin access nahi hai.\n"
-            f"Aapki Telegram ID: <code>{msg.from_user.id}</code>\n\n"
+            "⛔ Admin access nahi hai.\\n"
+            f"Aapki Telegram ID: <code>{msg.from_user.id}</code>\\n\\n"
             "Render → Environment mein ADMIN_IDS ke andar ye ID add karein "
             "(multiple admins ke liye comma-separated IDs), phir service redeploy/restart karein."
         )
         return
     try:
-        users=await db().fetchval("SELECT COUNT(*) FROM users")
-        orders=await db().fetchval("SELECT COUNT(*) FROM orders")
-        paid=await db().fetchval("SELECT COUNT(*) FROM orders WHERE status='paid'")
-        tickets=await db().fetchval("SELECT COUNT(*) FROM tickets")
-        await msg.answer(
-            f"🛠️ <b>{EVENT_NAME} Admin</b>\nUsers: {users}\nOrders: {orders}"
-            f"\nPaid orders: {paid}\nTickets: {tickets}"
-            "\n\nUse /checkin TICKET-CODE to check in a ticket."
-        )
+        await msg.answer(await admin_home_text(), reply_markup=admin_keyboard())
     except Exception:
         log.exception("Admin panel failed for user %s", msg.from_user.id)
-        await msg.answer("⚠️ Admin panel kholte waqt database error aaya. Render Logs mein /admin ke baad wali traceback check karein.")
+        await msg.answer("⚠️ Admin panel database error. Render Logs mein /admin ke baad wali traceback check karein.")
+
+
+@router.callback_query(F.data.startswith("admin:"))
+async def admin_navigation(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    section = cb.data.split(":", 1)[1]
+    try:
+        if section in ("home", "stats"):
+            text = await admin_home_text()
+        elif section == "tiers":
+            rows = await db().fetch("SELECT id,label,price_inr,price_stars,is_active FROM ticket_types ORDER BY position,id")
+            text = "🎟 <b>Ticket Types</b>\\n" + ("\\n".join(f"• {r['label']} — ₹{r['price_inr']/100:.2f} / ⭐ {r['price_stars']} — {'Active' if r['is_active'] else 'Inactive'} (ID {r['id']})" for r in rows) or "Abhi koi ticket type nahi hai.")
+        elif section == "files":
+            rows = await db().fetch("SELECT f.id,t.label,f.file_type,f.is_active FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id ORDER BY f.position,f.id LIMIT 30")
+            text = "📁 <b>Ticket Files (latest 30)</b>\\n" + ("\\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
+        elif section == "settings":
+            rows = await db().fetch("SELECT key,value FROM bot_settings ORDER BY key")
+            text = "⚙️ <b>Settings</b>\\n" + ("\\n".join(f"• <code>{r['key']}</code>: {r['value'][:150]}" for r in rows) or "Custom settings abhi set nahi hain.") + "\\nEvent defaults Render Environment se aate hain."
+        elif section == "menu":
+            rows = await db().fetch("SELECT key,label,is_active,position FROM user_menu ORDER BY position")
+            text = "🧭 <b>User Menu</b>\\n" + ("\\n".join(f"• {r['position']}. {r['label']} — <code>{r['key']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "User menu empty hai.")
+        elif section == "force":
+            rows = await db().fetch("SELECT channel_id,channel_username,invite_link,is_active FROM force_channels ORDER BY id")
+            text = "📢 <b>Force Join Channels</b>\\n" + ("\\n".join(f"• {r['channel_username'] or r['channel_id']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Koi force-join channel configured nahi hai.")
+        elif section == "admins":
+            rows = await db().fetch("SELECT telegram_id,is_active FROM admins ORDER BY telegram_id")
+            text = "👮 <b>Database Admins</b>\\n" + ("\\n".join(f"• <code>{r['telegram_id']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Database admins list empty hai. Render ADMIN_IDS admins ko bhi access deta hai.")
+        elif section == "support":
+            rows = await db().fetch("SELECT id,user_id,COALESCE(full_name,'') AS full_name,COALESCE(query,message,'') AS query,status,created_at FROM support_tickets ORDER BY created_at DESC LIMIT 15")
+            text = "🆘 <b>Recent Support Tickets</b>\\n" + ("\\n\\n".join(f"#{r['id']} — {r['full_name'] or r['user_id']} — {r['status']}\\n{r['query'][:250]}" for r in rows) or "Abhi support tickets nahi hain.")
+        else:
+            text = "Unknown admin section."
+        await cb.answer()
+        if cb.message:
+            await cb.message.answer(text, reply_markup=admin_keyboard())
+    except Exception:
+        log.exception("Admin section %s failed for user %s", section, cb.from_user.id)
+        await cb.answer("Section load nahi hua. Render Logs check karein.", show_alert=True)
+
 
 @router.message(Command("checkin", "check"))
 async def checkin(msg: Message):
