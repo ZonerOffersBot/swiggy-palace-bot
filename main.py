@@ -651,7 +651,10 @@ async def admin_callback(q,context,data):
     elif data=="a_second":
         if not await is_admin(uid): return
         dbx=await db.connect()
-        cur=await dbx.execute("SELECT customer_id,paid_amount,utr,proof,status FROM second_order_unlocks WHERE status='pending' ORDER BY created_at ASC LIMIT 20")
+        if uid==OWNER_ID:
+            cur=await dbx.execute("SELECT customer_id,paid_amount,utr,proof,status FROM second_order_unlocks WHERE status='pending' ORDER BY created_at ASC LIMIT 20")
+        else:
+            cur=await dbx.execute("SELECT s.customer_id,s.paid_amount,s.utr,s.proof,s.status FROM second_order_unlocks s JOIN customer_admins ca ON ca.customer_id=s.customer_id WHERE s.status='pending' AND ca.admin_id=? AND ca.active=1 ORDER BY s.created_at ASC LIMIT 20",(uid,))
         rows=await cur.fetchall(); await dbx.close()
         if not rows:
             await q.message.reply_text("🔓 No pending 2nd-order unlock payments.",reply_markup=admin_menu()); return
@@ -668,7 +671,10 @@ async def admin_callback(q,context,data):
     elif data=="a_priority":
         if not await is_admin(uid): return
         dbx=await db.connect()
-        cur=await dbx.execute("SELECT customer_id,amount,utr,proof,created_at,status FROM priority_payments WHERE status='pending' ORDER BY created_at ASC LIMIT 20")
+        if uid==OWNER_ID:
+            cur=await dbx.execute("SELECT customer_id,amount,utr,proof,created_at,status FROM priority_payments WHERE status='pending' ORDER BY created_at ASC LIMIT 20")
+        else:
+            cur=await dbx.execute("SELECT p.customer_id,p.amount,p.utr,p.proof,p.created_at,p.status FROM priority_payments p JOIN customer_admins ca ON ca.customer_id=p.customer_id WHERE p.status='pending' AND ca.admin_id=? AND ca.active=1 ORDER BY p.created_at ASC LIMIT 20",(uid,))
         rows=await cur.fetchall(); await dbx.close()
         if not rows:
             await q.message.reply_text("⭐ No pending High Priority payments.",reply_markup=admin_menu()); return
