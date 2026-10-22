@@ -2,7 +2,8 @@ import uuid
 import logging
 
 from aiogram import Router, F, Bot
-from aiogram.fsm.context import FSMContext\nfrom aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, LabeledPrice, PreCheckoutQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
