@@ -298,16 +298,53 @@ async def buy_categories(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("files:category:"))
 async def choose_inventory_category(cb: CallbackQuery, state: FSMContext):
-    cat_id = int(cb.data.rsplit(":", 1)[1])
+    try:
+        cat_id = int(cb.data.rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await cb.answer("Invalid category.", show_alert=True)
+        return
     cat = await db().fetchrow("SELECT * FROM inventory_categories WHERE id=$1 AND is_active=TRUE", cat_id)
     count = await db().fetchval("SELECT COUNT(*) FROM digital_inventory WHERE category_id=$1 AND status='available'", cat_id)
     await cb.answer()
     if not cat or not count:
         await cb.message.answer("Is category mein abhi stock available nahi hai.")
         return
-    await state.set_state(WalletFSM.purchase_quantity)
+    await state.clear()
     await state.update_data(category_id=cat_id)
-    await cb.message.answer(cat["label"] + "\nPrice per file: " + money(cat["price_paise"]) + "\nAvailable: " + str(count) + "\nKitni files chahiye? Quantity number bhejein. Cancel: /cancel")
+    kb = InlineKeyboardBuilder()
+    for qty in range(1, min(int(count), 5) + 1):
+        kb.button(text=f"{qty} file" if qty == 1 else f"{qty} files", callback_data=f"files:qty:{qty}")
+    kb.button(text="🔢 Custom quantity", callback_data="files:qty:custom")
+    kb.button(text="⬅️ Categories", callback_data="menu:buyfiles")
+    kb.adjust(2, 2, 1, 1)
+    await cb.message.answer(
+        f"🛒 <b>{cat['label']}</b>\nPrice per file: {money(cat['price_paise'])}\nAvailable: {count}\n\nQuantity select karein:",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("files:qty:"))
+async def inventory_quantity_button(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    value = cb.data.rsplit(":", 1)[1]
+    data = await state.get_data()
+    if not data.get("category_id"):
+        await cb.answer("Category dobara select karein.", show_alert=True)
+        return
+    if value == "custom":
+        await state.set_state(WalletFSM.purchase_quantity)
+        await cb.answer()
+        await cb.message.answer("Custom quantity number mein bhejein (1–100). Sirf custom quantity yahan type karni hai.")
+        return
+    try:
+        qty = int(value)
+    except ValueError:
+        await cb.answer("Quantity invalid hai.", show_alert=True)
+        return
+    if not 1 <= qty <= 5:
+        await cb.answer("Quantity invalid hai.", show_alert=True)
+        return
+    await cb.answer("Order process ho raha hai…")
+    await complete_inventory_purchase(cb.from_user, qty, state, bot, cb.message.answer)
 
 
 @router.message(WalletFSM.purchase_quantity, F.text)
@@ -320,10 +357,17 @@ async def purchase_quantity(msg: Message, state: FSMContext, bot: Bot):
     if not raw.isdigit() or not 1 <= int(raw) <= 100:
         await msg.answer("Quantity 1 se 100 ke beech number mein bhejein.")
         return
-    qty = int(raw)
+    await complete_inventory_purchase(msg.from_user, int(raw), state, bot, msg.answer)
+
+
+async def complete_inventory_purchase(user, qty: int, state: FSMContext, bot: Bot, reply):
     data = await state.get_data()
+    if not data.get("category_id"):
+        await state.clear()
+        await reply("Category dobara select karein.")
+        return
     cat_id = int(data["category_id"])
-    await user_wallet_id(msg.from_user)
+    await user_wallet_id(user)
     purchase_id = uuid.uuid4()
     chosen = []
     try:
@@ -331,37 +375,37 @@ async def purchase_quantity(msg: Message, state: FSMContext, bot: Bot):
             async with conn.transaction():
                 cat = await conn.fetchrow("SELECT * FROM inventory_categories WHERE id=$1 AND is_active=TRUE FOR UPDATE", cat_id)
                 if not cat:
-                    await msg.answer("Category available nahi hai.")
+                    await reply("Category available nahi hai.")
                     return
                 rows = await conn.fetch(
                     """SELECT id FROM digital_inventory WHERE category_id=$1 AND status='available'
                        ORDER BY id LIMIT $2 FOR UPDATE SKIP LOCKED""", cat_id, qty
                 )
                 if len(rows) < qty:
-                    await msg.answer("Itna stock available nahi hai. Available: " + str(len(rows)) + ".")
+                    await reply("Itna stock available nahi hai. Available: " + str(len(rows)) + ".")
                     return
                 total = cat["price_paise"] * qty
-                wallet = await conn.fetchrow("SELECT balance_paise FROM wallets WHERE user_id=$1 FOR UPDATE", msg.from_user.id)
+                wallet = await conn.fetchrow("SELECT balance_paise FROM wallets WHERE user_id=$1 FOR UPDATE", user.id)
                 if not wallet or wallet["balance_paise"] < total:
-                    await msg.answer("Wallet balance kam hai. Total " + money(total) + " chahiye. Pehle Add Balance karein.")
+                    await reply("Wallet balance kam hai. Total " + money(total) + " chahiye. Pehle Add Balance karein.")
                     return
                 new_balance = wallet["balance_paise"] - total
-                await conn.execute("UPDATE wallets SET balance_paise=$1,updated_at=NOW() WHERE user_id=$2", new_balance, msg.from_user.id)
+                await conn.execute("UPDATE wallets SET balance_paise=$1,updated_at=NOW() WHERE user_id=$2", new_balance, user.id)
                 await conn.execute(
                     """INSERT INTO inventory_purchases(purchase_id,user_id,category_id,quantity,unit_price_paise,total_paise,status)
                        VALUES($1,$2,$3,$4,$5,$6,'paid')""",
-                    purchase_id, msg.from_user.id, cat_id, qty, cat["price_paise"], total
+                    purchase_id, user.id, cat_id, qty, cat["price_paise"], total
                 )
                 await conn.execute(
                     """INSERT INTO wallet_transactions(user_id,kind,amount_paise,balance_after_paise,reference,details)
                        VALUES($1,'purchase',$2,$3,$4,jsonb_build_object('purchase_id',$5,'category_id',$6,'quantity',$7))""",
-                    msg.from_user.id, -total, new_balance, "purchase:" + str(purchase_id), str(purchase_id), cat_id, qty
+                    user.id, -total, new_balance, "purchase:" + str(purchase_id), str(purchase_id), cat_id, qty
                 )
                 for row in rows:
                     item = await conn.fetchrow(
                         """UPDATE digital_inventory SET status='sold',sold_to=$1,sold_at=NOW(),purchase_id=$2
                            WHERE id=$3 AND status='available' RETURNING *""",
-                        msg.from_user.id, purchase_id, row["id"]
+                        user.id, purchase_id, row["id"]
                     )
                     if item:
                         chosen.append(dict(item))
@@ -370,26 +414,26 @@ async def purchase_quantity(msg: Message, state: FSMContext, bot: Bot):
                     raise RuntimeError("Inventory count changed during purchase")
                 await conn.execute("UPDATE inventory_purchases SET status='delivery_pending' WHERE purchase_id=$1", purchase_id)
     except Exception:
-        log.exception("Inventory purchase failed for user %s", msg.from_user.id)
-        await msg.answer("Purchase complete nahi hui. Balance aur stock verify karke dobara try karein.")
+        log.exception("Inventory purchase failed for user %s", user.id)
+        await reply("Purchase complete nahi hui. Balance aur stock verify karke dobara try karein.")
         return
     await state.clear()
-    await msg.answer("✅ Purchase successful\nQuantity: " + str(qty) + "\nTotal: " + money(total) + "\nRemaining balance: " + money(new_balance) + "\nOrder ID: <code>" + str(purchase_id) + "</code>\nFiles ab sirf aapke order mein assigned hain.")
+    await reply("✅ Purchase successful\nQuantity: " + str(qty) + "\nTotal: " + money(total) + "\nRemaining balance: " + money(new_balance) + "\nOrder ID: <code>" + str(purchase_id) + "</code>\nFiles ab sirf aapke order mein assigned hain.")
     delivery_ok = True
     for item in chosen:
         try:
             if item["item_type"] == "text":
-                await bot.send_message(msg.from_user.id, item["text_content"] or "")
+                await bot.send_message(user.id, item["text_content"] or "")
             elif item["item_type"] == "photo":
-                await bot.send_photo(msg.from_user.id, item["telegram_file_id"], caption=item["caption"] or None)
+                await bot.send_photo(user.id, item["telegram_file_id"], caption=item["caption"] or None)
             else:
-                await bot.send_document(msg.from_user.id, item["telegram_file_id"], caption=item["caption"] or None)
+                await bot.send_document(user.id, item["telegram_file_id"], caption=item["caption"] or None)
             await db().execute("UPDATE inventory_purchase_items SET delivered_at=NOW() WHERE purchase_id=$1 AND inventory_id=$2", purchase_id, item["id"])
         except Exception:
             delivery_ok = False
             log.exception("Inventory delivery failed item %s purchase %s", item["id"], purchase_id)
     await db().execute("UPDATE inventory_purchases SET status=$1 WHERE purchase_id=$2", "delivered" if delivery_ok else "delivery_pending", purchase_id)
-    await notify_admins(bot, "🛒 JSON purchase\nUser: " + msg.from_user.full_name + "\nID: " + str(msg.from_user.id) + "\nCategory ID: " + str(cat_id) + "\nQuantity: " + str(qty) + "\nTotal: " + money(total) + "\nOrder: " + str(purchase_id))
+    await notify_admins(bot, "🛒 JSON purchase\nUser: " + user.full_name + "\nID: " + str(user.id) + "\nCategory ID: " + str(cat_id) + "\nQuantity: " + str(qty) + "\nTotal: " + money(total) + "\nOrder: " + str(purchase_id))
 
 
 @router.callback_query(F.data == "menu:purchases")
