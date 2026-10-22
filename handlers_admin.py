@@ -12,12 +12,28 @@ router=Router()
 
 @router.message(Command("admin"))
 async def admin_panel(msg: Message):
-    if not await is_admin(msg.from_user.id): return
-    users=await db().fetchval("SELECT COUNT(*) FROM users")
-    orders=await db().fetchval("SELECT COUNT(*) FROM orders")
-    paid=await db().fetchval("SELECT COUNT(*) FROM orders WHERE status='paid'")
-    tickets=await db().fetchval("SELECT COUNT(*) FROM tickets")
-    await msg.answer(f"🛠️ <b>{EVENT_NAME} Admin</b>\nUsers: {users}\nOrders: {orders}\nPaid orders: {paid}\nTickets: {tickets}\n\nUse /checkin TICKET-CODE to check in a ticket.")
+    # Give a clear diagnostic instead of silently ignoring /admin when ADMIN_IDS is wrong.
+    if not await is_admin(msg.from_user.id):
+        await msg.answer(
+            "⛔ Admin access nahi hai.\n"
+            f"Aapki Telegram ID: <code>{msg.from_user.id}</code>\n\n"
+            "Render → Environment mein ADMIN_IDS ke andar ye ID add karein "
+            "(multiple admins ke liye comma-separated IDs), phir service redeploy/restart karein."
+        )
+        return
+    try:
+        users=await db().fetchval("SELECT COUNT(*) FROM users")
+        orders=await db().fetchval("SELECT COUNT(*) FROM orders")
+        paid=await db().fetchval("SELECT COUNT(*) FROM orders WHERE status='paid'")
+        tickets=await db().fetchval("SELECT COUNT(*) FROM tickets")
+        await msg.answer(
+            f"🛠️ <b>{EVENT_NAME} Admin</b>\nUsers: {users}\nOrders: {orders}"
+            f"\nPaid orders: {paid}\nTickets: {tickets}"
+            "\n\nUse /checkin TICKET-CODE to check in a ticket."
+        )
+    except Exception:
+        log.exception("Admin panel failed for user %s", msg.from_user.id)
+        await msg.answer("⚠️ Admin panel kholte waqt database error aaya. Render Logs mein /admin ke baad wali traceback check karein.")
 
 @router.message(Command("checkin", "check"))
 async def checkin(msg: Message):
