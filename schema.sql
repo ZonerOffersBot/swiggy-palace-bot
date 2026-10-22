@@ -244,3 +244,6 @@ INSERT INTO user_menu(key,label,position,is_active) VALUES
  ('buyfiles','🛒 Buy JSON Files',5,TRUE),
  ('purchases','📦 My Purchases',6,TRUE)
 ON CONFLICT(key) DO NOTHING;
+UPDATE user_menu SET label='💰 Wallet' WHERE key='balance';
+UPDATE user_menu SET label='🛒 JSON Shop' WHERE key='buyfiles';
+UPDATE user_menu SET label='📦 My Purchases' WHERE key='purchases';
