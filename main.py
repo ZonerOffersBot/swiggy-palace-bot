@@ -25,11 +25,21 @@ async def run_single_poller(dp, bot):
     conn = await db().acquire()
     acquired = False
     try:
-        acquired = await conn.fetchval("SELECT pg_try_advisory_lock(731946220)")
-        if not acquired:
-            logging.warning("Another instance owns Telegram polling; this instance will keep health/reconcile services only.")
-            await asyncio.Event().wait()
-            return
+        # Render may briefly overlap old and new instances during deployment.
+        # Do not wait forever after one failed lock attempt: keep retrying until
+        # the previous poller exits and releases its PostgreSQL session lock.
+        attempts = 0
+        while not acquired:
+            acquired = await conn.fetchval("SELECT pg_try_advisory_lock(731946220)")
+            if acquired:
+                break
+            attempts += 1
+            if attempts == 1:
+                logging.warning("Telegram polling lock is held by another instance; retrying every 5 seconds.")
+            elif attempts % 12 == 0:
+                logging.warning("Telegram polling lock is still held after %s seconds; will keep retrying.", attempts * 5)
+            await asyncio.sleep(5)
+        logging.info("Telegram polling lock acquired; starting polling.")
         await dp.start_polling(bot, handle_signals=False, close_bot_session=False)
     finally:
         if acquired:
