@@ -615,7 +615,24 @@ async def cancel_cmd(update,context):
 
 async def admin_callback(q,context,data):
     uid=q.from_user.id
-    if not await is_admin(uid): return
+    if not await is_admin(uid):
+        try:
+            await q.answer("Not authorized", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    # Payment approval/rejection is strictly manual. Only an authorized admin
+    # pressing one of these buttons can change a pending payment.
+    if data.startswith("approvepay:") or data.startswith("rejectpay:"):
+        try:
+            await q.answer("Processing manual decision…")
+        except Exception:
+            pass
+        oid = data.split(":", 1)[1].strip()
+        await approve_payment(q, oid, data.startswith("approvepay:"))
+        return
+
     if data.startswith("seller_approve:") or data.startswith("seller_reject:"):
         if uid!=OWNER_ID: return
         sid=int(data.split(":")[1]); ok=data.startswith("seller_approve:")
@@ -918,11 +935,9 @@ async def admin_callback(q,context,data):
             [InlineKeyboardButton("🔄 Refresh",callback_data="a_payment_history"),InlineKeyboardButton("⬅️ Back",callback_data="a_back")]
         ]))
     elif data=="a_pay":
-        dbx=await db.connect(); cur=await dbx.execute("SELECT o.*,p.utr,p.proof FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.status='pending' ORDER BY o.created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
-        if not rows: await q.message.reply_text("💳 No pending payment verification."); return
-        for o in rows:
-            kb=[[__import__('telegram').InlineKeyboardButton("✅ Approve",callback_data=f"approvepay:{o['id']}"),__import__('telegram').InlineKeyboardButton("❌ Reject",callback_data=f"rejectpay:{o['id']}")]]
-            await q.message.reply_text(f"💳 <b>{o['id']}</b>\n💰 ₹{o['total']:.2f}\nUTR: {o['utr']}",parse_mode="HTML",reply_markup=__import__('telegram').InlineKeyboardMarkup(kb))
+        # Keep the admin panel payment queue consistent: full details,
+        # proof screenshot, UTR, amount and manual Approve/Reject controls.
+        await admin_callback(q, context, "a_receive")
     elif data=="a_active":
         dbx=await db.connect(); cur=await dbx.execute("SELECT id FROM orders WHERE status NOT IN ('completed','cancelled','refund_completed') ORDER BY priority DESC,updated_at DESC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
         if not rows:
