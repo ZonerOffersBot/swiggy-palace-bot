@@ -617,12 +617,12 @@ async def history_search(msg: Message, state: FSMContext):
     if not tx and not deposits:
         await msg.answer("Is user ke transaction nahi mile.")
         return
-    text = "🧾 <b>User & Transaction History</b>\\n"
+    text = "🧾 <b>User & Transaction History</b>\n"
     for r in tx:
         sign = "+" if r["amount_paise"] > 0 else ""
-        text += "\\n#" + str(r["id"]) + " | " + (r["full_name"] or "Unknown") + " | @" + (r["username"] or "—") + "\\nUser ID: <code>" + str(r["user_id"]) + "</code>\\nType: " + r["kind"] + " | Amount: " + sign + money(r["amount_paise"]) + "\\nBalance after: " + money(r["balance_after_paise"]) + "\\nReference: <code>" + r["reference"][:45] + "</code>\\nDetails: " + str(r["details_text"] or "{}")[:250] + "\\nTime: " + str(r["created_at"]) + "\\n"
+        text += "\n#" + str(r["id"]) + " | " + (r["full_name"] or "Unknown") + " | @" + (r["username"] or "—") + "\nUser ID: <code>" + str(r["user_id"]) + "</code>\nType: " + r["kind"] + " | Amount: " + sign + money(r["amount_paise"]) + "\nBalance after: " + money(r["balance_after_paise"]) + "\nReference: <code>" + r["reference"][:45] + "</code>\nDetails: " + str(r["details_text"] or "{}")[:250] + "\nTime: " + str(r["created_at"]) + "\n"
     if deposits:
-        text += "\\n<b>Deposit requests</b>\\n"
+        text += "\n<b>Deposit requests</b>\n"
         for d in deposits:
-            text += "\\nDeposit #" + str(d["id"]) + " | " + (d["full_name"] or "Unknown") + " | @" + (d["username"] or "—") + "\\nUser ID: <code>" + str(d["user_id"]) + "</code> | Amount: " + money(d["amount_paise"]) + "\\nStatus: " + d["status"] + " | UTR: " + (d["utr"] or "—") + "\\nReviewed by: " + str(d["reviewed_by"] or "—") + " | Time: " + str(d["created_at"]) + "\\n"
+            text += "\nDeposit #" + str(d["id"]) + " | " + (d["full_name"] or "Unknown") + " | @" + (d["username"] or "—") + "\nUser ID: <code>" + str(d["user_id"]) + "</code> | Amount: " + money(d["amount_paise"]) + "\nStatus: " + d["status"] + " | UTR: " + (d["utr"] or "—") + "\nReviewed by: " + str(d["reviewed_by"] or "—") + " | Time: " + str(d["created_at"]) + "\n"
     await msg.answer(text[:4000])
