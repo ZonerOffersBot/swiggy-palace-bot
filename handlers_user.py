@@ -42,13 +42,22 @@ async def start(msg: Message, state: FSMContext):
              full_name=EXCLUDED.full_name""",
         user.id, user.username, user.first_name, user.full_name,
     )
-    welcome = await get_setting("welcome_msg", "Welcome!")
+    welcome = await get_setting(
+        "welcome_msg",
+        "Welcome! Check the event details and choose an option below to book your ticket.",
+    )
     event = await get_setting("event_name", EVENT_NAME)
     date = await get_setting("event_date", EVENT_DATE)
     venue = await get_setting("venue", VENUE)
+    tiers = await db().fetch(
+        "SELECT label, price_inr, price_stars FROM ticket_types WHERE is_active=TRUE ORDER BY position,id"
+    )
+    lines = [f"• {row['label']} — ₹{row['price_inr'] / 100:.0f} or ⭐ {row['price_stars']}" for row in tiers]
+    ticket_text = "\\n".join(lines) if lines else "Tickets are not on sale right now. Please check back later."
     await msg.answer(
-        f"{welcome}\n\n🎭 <b>{event}</b>\n📅 {date}\n📍 {venue}"
-        f"\n\nINR ticket: ₹{TICKET_PRICE_INR}\nStars ticket: ⭐ {TICKET_PRICE_STARS}",
+        f"{welcome}\\n\\n🎭 <b>{event}</b>\\n📅 {date}\\n📍 {venue}"
+        f"\\n\\n<b>Available tickets</b>\\n{ticket_text}"
+        f"\\n\\nChoose an option below whenever you're ready.",
         reply_markup=await build_home_kb(),
     )
 
