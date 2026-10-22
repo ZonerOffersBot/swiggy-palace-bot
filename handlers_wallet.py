@@ -153,13 +153,11 @@ async def deposit_submit(msg: Message, state: FSMContext, bot: Bot):
     user = await db().fetchrow("SELECT full_name,username FROM users WHERE telegram_id=$1", msg.from_user.id)
     for aid in await _admin_ids():
         try:
-            await bot.send_photo(
-                aid, data["proof_file_id"],
-                caption="💰 <b>Deposit request #" + str(dep["id"]) + "</b>\nUser: " + (user["full_name"] or "Unknown") +
-                "\nUsername: @" + (user["username"] or "—") + "\nID: <code>" + str(msg.from_user.id) +
-                "</code>\nAmount: <b>" + money(data["deposit_amount_paise"]) + "</b>\nUTR: " + (utr or "Not provided"),
-                reply_markup=kb.as_markup()
-            )
+            caption = "💰 <b>Deposit request #" + str(dep["id"]) + "</b>\\nUser: " + (user["full_name"] or "Unknown") + "\\nUsername: @" + (user["username"] or "—") + "\\nID: <code>" + str(msg.from_user.id) + "</code>\\nAmount: <b>" + money(data["deposit_amount_paise"]) + "</b>\\nUTR: " + (utr or "Not provided")
+            if data["proof_type"] == "photo":
+                await bot.send_photo(aid, data["proof_file_id"], caption=caption, reply_markup=kb.as_markup())
+            else:
+                await bot.send_document(aid, data["proof_file_id"], caption=caption, reply_markup=kb.as_markup())
         except Exception:
             log.exception("Could not notify admin %s for deposit %s", aid, dep["id"])
 
