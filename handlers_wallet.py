@@ -594,22 +594,35 @@ async def history_start(cb: CallbackQuery, state: FSMContext):
 @router.message(WalletFSM.history_search, F.text)
 async def history_search(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id):
-        await state.clear(); return
+        await state.clear()
+        return
     query = (msg.text or "").strip()
     if query == "/cancel":
-        await state.clear(); await msg.answer("Cancelled."); return
+        await state.clear()
+        await msg.answer("Cancelled.")
+        return
     if query.upper() == "ALL":
-        rows = await db().fetch("""SELECT t.*,u.full_name,u.username FROM wallet_transactions t JOIN users u ON u.telegram_id=t.user_id ORDER BY t.id DESC LIMIT 30""")
+        tx = await db().fetch("""SELECT t.*,t.details::text AS details_text,u.full_name,u.username FROM wallet_transactions t JOIN users u ON u.telegram_id=t.user_id ORDER BY t.id DESC LIMIT 30""")
+        deposits = await db().fetch("""SELECT d.*,u.full_name,u.username FROM wallet_deposits d JOIN users u ON u.telegram_id=d.user_id ORDER BY d.created_at DESC LIMIT 20""")
     else:
         uid = int(query) if query.isdigit() else -1
-        rows = await db().fetch("""SELECT t.*,u.full_name,u.username FROM wallet_transactions t JOIN users u ON u.telegram_id=t.user_id
+        pattern = "%" + query.lstrip("@") + "%"
+        tx = await db().fetch("""SELECT t.*,t.details::text AS details_text,u.full_name,u.username FROM wallet_transactions t JOIN users u ON u.telegram_id=t.user_id
             WHERE u.telegram_id=$1 OR COALESCE(u.username,'') ILIKE $2 OR COALESCE(u.full_name,'') ILIKE $2
-            ORDER BY t.id DESC LIMIT 30""", uid, "%" + query.lstrip("@") + "%")
+            ORDER BY t.id DESC LIMIT 30""", uid, pattern)
+        deposits = await db().fetch("""SELECT d.*,u.full_name,u.username FROM wallet_deposits d JOIN users u ON u.telegram_id=d.user_id
+            WHERE u.telegram_id=$1 OR COALESCE(u.username,'') ILIKE $2 OR COALESCE(u.full_name,'') ILIKE $2
+            ORDER BY d.created_at DESC LIMIT 20""", uid, pattern)
     await state.clear()
-    if not rows:
+    if not tx and not deposits:
         await msg.answer("Is user ke transaction nahi mile.")
         return
-    text = "🧾 <b>Transaction History</b> (latest 30)\n"
-    for r in rows:
-        text += "\n#" + str(r["id"]) + " | " + (r["full_name"] or "Unknown") + " | @" + (r["username"] or "—") + "\nUser ID: <code>" + str(r["user_id"]) + "</code>\nType: " + r["kind"] + " | Amount: " + money(r["amount_paise"]) + "\nBalance after: " + money(r["balance_after_paise"]) + "\nRef: <code>" + r["reference"][:45] + "</code>\nTime: " + str(r["created_at"]) + "\n"
-    await msg.answer(text)
+    text = "🧾 <b>User & Transaction History</b>\\n"
+    for r in tx:
+        sign = "+" if r["amount_paise"] > 0 else ""
+        text += "\\n#" + str(r["id"]) + " | " + (r["full_name"] or "Unknown") + " | @" + (r["username"] or "—") + "\\nUser ID: <code>" + str(r["user_id"]) + "</code>\\nType: " + r["kind"] + " | Amount: " + sign + money(r["amount_paise"]) + "\\nBalance after: " + money(r["balance_after_paise"]) + "\\nReference: <code>" + r["reference"][:45] + "</code>\\nDetails: " + str(r["details_text"] or "{}")[:250] + "\\nTime: " + str(r["created_at"]) + "\\n"
+    if deposits:
+        text += "\\n<b>Deposit requests</b>\\n"
+        for d in deposits:
+            text += "\\nDeposit #" + str(d["id"]) + " | " + (d["full_name"] or "Unknown") + " | @" + (d["username"] or "—") + "\\nUser ID: <code>" + str(d["user_id"]) + "</code> | Amount: " + money(d["amount_paise"]) + "\\nStatus: " + d["status"] + " | UTR: " + (d["utr"] or "—") + "\\nReviewed by: " + str(d["reviewed_by"] or "—") + " | Time: " + str(d["created_at"]) + "\\n"
+    await msg.answer(text[:4000])
