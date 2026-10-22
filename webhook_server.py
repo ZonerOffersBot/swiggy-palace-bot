@@ -4,9 +4,14 @@ from services_phonepe import verify_webhook_signature
 log=logging.getLogger(__name__)
 app=FastAPI()
 
+@app.get("/")
+async def root():
+    # Render may probe the root URL; return a lightweight health response instead of 404.
+    return {"ok": True, "service": "swiggy-swagger-bot"}
+
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "ticket-bot", "phonepe": "disabled-until-verified"}
+    return {"ok": True, "service": "swiggy-swagger-bot", "phonepe": "disabled-until-verified"}
 
 @app.post("/phonepe/callback")
 async def phonepe_callback(request: Request):
