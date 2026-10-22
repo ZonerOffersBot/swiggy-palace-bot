@@ -621,14 +621,14 @@ async def history_recent(cb: CallbackQuery):
         await cb.answer("Admin only.", show_alert=True); return
     tx = await db().fetch("""SELECT t.*,t.details::text AS details_text,u.full_name,u.username FROM wallet_transactions t JOIN users u ON u.telegram_id=t.user_id ORDER BY t.id DESC LIMIT 15""")
     deposits = await db().fetch("""SELECT d.*,u.full_name,u.username FROM wallet_deposits d JOIN users u ON u.telegram_id=d.user_id ORDER BY d.created_at DESC LIMIT 10""")
-    text = "🕒 <b>Recent Transactions</b>\\n"
+    text = "🕒 <b>Recent Transactions</b>\n"
     for r in tx:
         sign = "+" if r["amount_paise"] > 0 else ""
-        text += "\\n#" + str(r["id"]) + " | " + (r["full_name"] or "Unknown") + " | @" + (r["username"] or "—") + "\\nID: <code>" + str(r["user_id"]) + "</code>\\n" + r["kind"] + ": " + sign + money(r["amount_paise"]) + " | Balance: " + money(r["balance_after_paise"]) + "\\nRef: <code>" + r["reference"][:35] + "</code> | " + str(r["created_at"]) + "\\n"
+        text += "\n#" + str(r["id"]) + " | " + (r["full_name"] or "Unknown") + " | @" + (r["username"] or "—") + "\nID: <code>" + str(r["user_id"]) + "</code>\n" + r["kind"] + ": " + sign + money(r["amount_paise"]) + " | Balance: " + money(r["balance_after_paise"]) + "\nRef: <code>" + r["reference"][:35] + "</code> | " + str(r["created_at"]) + "\n"
     if deposits:
-        text += "\\n<b>Recent Deposit Requests</b>\\n"
+        text += "\n<b>Recent Deposit Requests</b>\n"
         for d in deposits:
-            text += "\\nDeposit #" + str(d["id"]) + " | " + (d["full_name"] or "Unknown") + " | ID <code>" + str(d["user_id"]) + "</code>\\n" + money(d["amount_paise"]) + " | " + d["status"] + " | UTR: " + (d["utr"] or "—") + "\\n"
+            text += "\nDeposit #" + str(d["id"]) + " | " + (d["full_name"] or "Unknown") + " | ID <code>" + str(d["user_id"]) + "</code>\n" + money(d["amount_paise"]) + " | " + d["status"] + " | UTR: " + (d["utr"] or "—") + "\n"
     await cb.answer()
     await cb.message.answer(text[:4000], reply_markup=admin_kb())
 
