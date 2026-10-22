@@ -16,8 +16,8 @@ def admin_keyboard():
     buttons = [
         ("📊 Stats", "admin:stats"), ("🎟 Ticket Types", "admin:tiers"),
         ("🎁 Promo Codes", "admin:promos"),
-        ("📁 Ticket Files", "admin:files"), ("💼 Wallet / JSON Shop", "admin:wallet_home"),
-        ("🧾 Transaction History", "admin:wallet_history"), ("⚙️ Settings", "admin:settings"),
+        ("📁 Ticket Files", "admin:files"), ("💰 Wallet", "admin:wallet_home"),
+        ("🛒 JSON Shop Files", "admin:wallet_inventory"), ("🧾 Transaction History", "admin:wallet_history"), ("⚙️ Settings", "admin:settings"),
         ("🧭 User Menu", "admin:menu"), ("📢 Force Join", "admin:force"),
         ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
         ("🔄 Refresh", "admin:home"),
@@ -95,6 +95,7 @@ async def admin_navigation(cb: CallbackQuery):
             tiers = await db().fetch("SELECT id,label FROM ticket_types ORDER BY position,id")
             for r in tiers:
                 kb.button(text=f"➕ Add file: {r['label'][:28]}", callback_data=f"admin:add_file:{r['id']}")
+            kb.button(text="🛒 JSON Shop Files", callback_data="admin:wallet_inventory")
             kb.button(text="⬅️ Admin home", callback_data="admin:home")
             kb.adjust(1)
             section_markup = kb.as_markup()
@@ -113,6 +114,8 @@ async def admin_navigation(cb: CallbackQuery):
             kb = InlineKeyboardBuilder()
             for r in rows:
                 kb.button(text=f"✏️ Rename: {r['label'][:20]}", callback_data=f"admin:edit_menu:{r['key']}")
+                kb.button(text=f"⬆️ {r['position']}", callback_data=f"admin:menu_move_up:{r['key']}")
+                kb.button(text=f"⬇️ {r['position']}", callback_data=f"admin:menu_move_down:{r['key']}")
                 action = "disable" if r["is_active"] else "enable"
                 label = "🙈 Hide" if r["is_active"] else "👁 Show"
                 kb.button(text=label, callback_data=f"admin:{action}_menu:{r['key']}")
@@ -584,3 +587,30 @@ async def add_file_save(msg:Message,state:FSMContext,bot:Bot):
         await msg.answer("Document, photo ya text bhejein."); return
     await db().execute("INSERT INTO ticket_files(ticket_type_id,file_type,telegram_file_id,file_id,text_content,is_active,added_by,file_name,mime_type,file_size,caption) VALUES($1,$2,$3,$3,$4,TRUE,$5,$6,$7,$8,$9)",tier_id,file_type,file_id,text_content,msg.from_user.id,file_name,mime,size,caption)
     await state.clear(); await msg.answer("✅ File/content save ho gaya. Note: delivery flow mein ise use karne ka support alag se verify karna hoga.")
+
+
+@router.callback_query(F.data.startswith(("admin:menu_move_up:", "admin:menu_move_down:")))
+async def move_user_menu_item(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    action, key = cb.data.rsplit(":", 1)
+    direction = -1 if action == "admin:menu_move_up" else 1
+    async with db().acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow("SELECT key,position FROM user_menu WHERE key=$1 FOR UPDATE", key)
+            if not current:
+                await cb.answer("Menu item nahi mila.", show_alert=True)
+                return
+            neighbor = await conn.fetchrow(
+                "SELECT key,position FROM user_menu WHERE position " + ("<" if direction < 0 else ">") + " $1 ORDER BY position " + ("DESC" if direction < 0 else "ASC") + " LIMIT 1 FOR UPDATE",
+                current["position"],
+            )
+            if not neighbor:
+                await cb.answer("Is direction mein aur item nahi hai.")
+                return
+            await conn.execute("UPDATE user_menu SET position=$1 WHERE key=$2", neighbor["position"], current["key"])
+            await conn.execute("UPDATE user_menu SET position=$1 WHERE key=$2", current["position"], neighbor["key"])
+    await cb.answer("Menu order update ho gaya.")
+    if cb.message:
+        await cb.message.answer("🧭 Menu order update ho gaya. Latest order dekhne ke liye User Menu dobara kholein.", reply_markup=admin_keyboard())
