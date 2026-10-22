@@ -16,14 +16,15 @@ def admin_keyboard():
     buttons = [
         ("📊 Stats", "admin:stats"), ("🎟 Ticket Types", "admin:tiers"),
         ("🎁 Promo Codes", "admin:promos"),
-        ("📁 Ticket Files", "admin:files"), ("⚙️ Settings", "admin:settings"),
+        ("📁 Ticket Files", "admin:files"), ("💼 Wallet / JSON Shop", "admin:wallet_home"),
+        ("🧾 Transaction History", "admin:wallet_history"), ("⚙️ Settings", "admin:settings"),
         ("🧭 User Menu", "admin:menu"), ("📢 Force Join", "admin:force"),
         ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
         ("🔄 Refresh", "admin:home"),
     ]
     for label, data in buttons:
         kb.button(text=label, callback_data=data)
-    kb.adjust(2, 2, 2, 2, 1)
+    kb.adjust(2, 2, 2, 2, 2, 2)
     return kb.as_markup()
 
 
@@ -83,6 +84,7 @@ async def admin_navigation(cb: CallbackQuery):
             for r in rows:
                 action = "disable" if r["is_active"] else "enable"
                 kb.button(text=f"{'⏸ Disable' if r['is_active'] else '▶️ Enable'} {r['code'][:20]}", callback_data=f"admin:{action}_promo:{r['code']}")
+                kb.button(text=f"🗑 Delete {r['code'][:18]}", callback_data=f"admin:delete_promo:{r['code']}")
             kb.button(text="⬅️ Admin home", callback_data="admin:home")
             kb.adjust(1)
             section_markup = kb.as_markup()
@@ -375,6 +377,21 @@ async def toggle_promo(cb: CallbackQuery):
     await cb.answer("Promo code enabled." if active else "Promo code disabled.")
     if cb.message:
         await cb.message.answer("Promo code status update ho gaya. Admin → Promo Codes dobara kholkar verify karein.")
+
+
+@router.callback_query(F.data.startswith("admin:delete_promo:"))
+async def delete_promo(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    code = cb.data.rsplit(":", 1)[1]
+    used = await db().fetchval("SELECT EXISTS(SELECT 1 FROM promo_redemptions WHERE code=$1)", code)
+    if used:
+        await db().execute("UPDATE promo_codes SET is_active=FALSE WHERE code=$1", code)
+        await cb.answer("Code use ho chuka hai; history preserve karne ke liye disable kiya.", show_alert=True)
+    else:
+        deleted = await db().fetchval("DELETE FROM promo_codes WHERE code=$1 RETURNING code", code)
+        await cb.answer("Promo code delete ho gaya." if deleted else "Promo code nahi mila.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("admin:edit_tier:"))
