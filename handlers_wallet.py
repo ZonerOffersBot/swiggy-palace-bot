@@ -21,6 +21,7 @@ class WalletFSM(StatesGroup):
     purchase_quantity = State()
     inventory_add = State()
     category_price = State()
+    category_name = State()
     qr_upload = State()
     history_search = State()
 
@@ -412,7 +413,7 @@ async def admin_inventory(cb: CallbackQuery):
         await cb.answer("Admin only.", show_alert=True); return
     cats = await db().fetch("SELECT id,label,price_paise,is_active FROM inventory_categories ORDER BY position,id")
     kb = InlineKeyboardBuilder()
-    text = "📁 <b>JSON Inventory</b>\n"
+    text = "🛒 <b>JSON Shop Files</b>\n"
     for c in cats:
         count = await db().fetchval("SELECT COUNT(*) FROM digital_inventory WHERE category_id=$1 AND status='available'", c["id"])
         text += "\n" + c["label"] + " — " + str(count) + " available — " + ("Active" if c["is_active"] else "Disabled")
@@ -519,9 +520,11 @@ async def admin_prices(cb: CallbackQuery):
     text = "💵 <b>Category Prices</b>\n"
     for r in rows:
         text += "\n" + r["label"] + " — " + money(r["price_paise"]) + " — " + ("Active" if r["is_active"] else "Disabled")
-        kb.button(text="✏️ Edit " + r["label"][:24], callback_data="admin:wallet_price_edit:" + str(r["id"]))
+        kb.button(text="✏️ Price " + r["label"][:20], callback_data="admin:wallet_price_edit:" + str(r["id"]))
+        kb.button(text="📝 Name " + r["label"][:20], callback_data="admin:wallet_cat_name:" + str(r["id"]))
         kb.button(text=("⏸ Disable " if r["is_active"] else "▶️ Enable ") + r["label"][:18], callback_data="admin:wallet_cat_toggle:" + str(r["id"]))
-    kb.button(text="⬅️ Wallet Admin", callback_data="admin:wallet_home")
+    kb.button(text="🛒 JSON Shop Files", callback_data="admin:wallet_inventory")
+    kb.button(text="⬅️ Admin Home", callback_data="admin:home")
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer(text, reply_markup=kb.as_markup())
@@ -665,3 +668,32 @@ async def history_search(msg: Message, state: FSMContext):
         for d in deposits:
             text += "\nDeposit #" + str(d["id"]) + " | " + (d["full_name"] or "Unknown") + " | @" + (d["username"] or "—") + "\nUser ID: <code>" + str(d["user_id"]) + "</code> | Amount: " + money(d["amount_paise"]) + "\nStatus: " + d["status"] + " | UTR: " + (d["utr"] or "—") + "\nReviewed by: " + str(d["reviewed_by"] or "—") + " | Time: " + str(d["created_at"]) + "\n"
     await msg.answer(text[:4000])
+
+
+@router.callback_query(F.data.startswith("admin:wallet_cat_name:"))
+async def category_name_start(cb: CallbackQuery, state: FSMContext):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True); return
+    cat_id = int(cb.data.rsplit(":", 1)[1])
+    cat = await db().fetchrow("SELECT id,label FROM inventory_categories WHERE id=$1", cat_id)
+    if not cat:
+        await cb.answer("Category nahi mili.", show_alert=True); return
+    await state.set_state(WalletFSM.category_name)
+    await state.update_data(category_name_id=cat_id)
+    await cb.answer()
+    await cb.message.answer("Current name: " + cat["label"] + "\nNaya category name bhejein (1–50 characters). Cancel: /cancel")
+
+
+@router.message(WalletFSM.category_name, F.text)
+async def category_name_save(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        await state.clear(); return
+    label = (msg.text or "").strip()
+    if label == "/cancel":
+        await state.clear(); await msg.answer("Cancelled."); return
+    if not label or len(label) > 50:
+        await msg.answer("Category name 1–50 characters ka bhejein. Cancel: /cancel"); return
+    data = await state.get_data()
+    await db().execute("UPDATE inventory_categories SET label=$1,updated_at=NOW() WHERE id=$2", label, data["category_name_id"])
+    await state.clear()
+    await msg.answer("✅ JSON Shop category name update ho gaya: " + label)
