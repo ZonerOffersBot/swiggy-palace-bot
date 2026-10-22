@@ -30,6 +30,11 @@ class RepositorySanityTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, schema)
 
+    def test_render_root_probe_returns_health_response(self):
+        server = self.read("webhook_server.py")
+        self.assertIn('@app.get("/")', server)
+        self.assertIn('"service": "swiggy-swagger-bot"', server)
+
     def test_deposit_review_is_transactional_and_idempotent(self):
         wallet = self.read("handlers_wallet.py")
         self.assertIn("SELECT * FROM wallet_deposits WHERE id=$1 FOR UPDATE", wallet)
