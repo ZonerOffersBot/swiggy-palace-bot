@@ -22,9 +22,20 @@ class RepositorySanityTests(unittest.TestCase):
             "is_checked_in",
             "create table if not exists user_menu",
             "create table if not exists support_tickets",
+            "create table if not exists wallet_deposits",
+            "alter table wallet_deposits add column if not exists reviewed_by bigint",
+            "alter table wallet_deposits add column if not exists reviewed_at timestamptz",
+            "create table if not exists wallet_transactions",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, schema)
+
+    def test_deposit_review_is_transactional_and_idempotent(self):
+        wallet = self.read("handlers_wallet.py")
+        self.assertIn("SELECT * FROM wallet_deposits WHERE id=$1 FOR UPDATE", wallet)
+        self.assertIn('reference = "deposit:" + str(dep_id)', wallet)
+        self.assertIn("Deposit review failed: deposit_id=%s", wallet)
+        self.assertIn("reviewed_by=$1,reviewed_at=NOW()", wallet)
 
     def test_only_tier_checkout_owns_buy_callback(self):
         payment = self.read("handlers_payment.py")
