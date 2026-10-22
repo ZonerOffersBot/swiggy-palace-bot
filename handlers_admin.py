@@ -60,27 +60,69 @@ async def admin_navigation(cb: CallbackQuery):
         await cb.answer("Admin only.", show_alert=True)
         return
     section = cb.data.split(":", 1)[1]
+    section_markup = admin_keyboard()
     try:
         if section in ("home", "stats"):
             text = await admin_home_text()
         elif section == "tiers":
             rows = await db().fetch("SELECT id,label,price_inr,price_stars,is_active FROM ticket_types ORDER BY position,id")
             text = "🎟 <b>Ticket Types</b>\\n" + ("\\n".join(f"• {r['label']} — ₹{r['price_inr']/100:.2f} / ⭐ {r['price_stars']} — {'Active' if r['is_active'] else 'Inactive'} (ID {r['id']})" for r in rows) or "Abhi koi ticket type nahi hai.")
+            kb = InlineKeyboardBuilder()
+            for r in rows:
+                kb.button(text=f"✏️ Edit {r['label'][:24]}", callback_data=f"admin:edit_tier:{r['id']}")
+                kb.button(text=f"📎 Add file: {r['label'][:18]}", callback_data=f"admin:add_file:{r['id']}")
+            kb.button(text="⬅️ Admin home", callback_data="admin:home")
+            kb.adjust(1)
+            section_markup = kb.as_markup()
         elif section == "files":
             rows = await db().fetch("SELECT f.id,t.label,f.file_type,f.is_active FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id ORDER BY f.position,f.id LIMIT 30")
             text = "📁 <b>Ticket Files (latest 30)</b>\\n" + ("\\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
+            kb = InlineKeyboardBuilder()
+            tiers = await db().fetch("SELECT id,label FROM ticket_types ORDER BY position,id")
+            for r in tiers:
+                kb.button(text=f"➕ Add file: {r['label'][:28]}", callback_data=f"admin:add_file:{r['id']}")
+            kb.button(text="⬅️ Admin home", callback_data="admin:home")
+            kb.adjust(1)
+            section_markup = kb.as_markup()
         elif section == "settings":
             rows = await db().fetch("SELECT key,value FROM bot_settings ORDER BY key")
-            text = "⚙️ <b>Settings</b>\\n" + ("\\n".join(f"• <code>{r['key']}</code>: {r['value'][:150]}" for r in rows) or "Custom settings abhi set nahi hain.") + "\\nEvent defaults Render Environment se aate hain."
+            text = "⚙️ <b>Settings</b>\\n" + ("\\n".join(f"• <code>{r['key']}</code>: {r['value'][:150]}" for r in rows) or "Custom settings abhi set nahi hain.") + "\\nEvent details yahin se edit kar sakte hain."
+            kb = InlineKeyboardBuilder()
+            for key, label in (("event_name","Event name"),("event_date","Event date"),("venue","Venue"),("welcome_msg","Welcome message")):
+                kb.button(text=f"✏️ {label}", callback_data=f"admin:edit_setting:{key}")
+            kb.button(text="⬅️ Admin home", callback_data="admin:home")
+            kb.adjust(2,2,1)
+            section_markup = kb.as_markup()
         elif section == "menu":
             rows = await db().fetch("SELECT key,label,is_active,position FROM user_menu ORDER BY position")
             text = "🧭 <b>User Menu</b>\\n" + ("\\n".join(f"• {r['position']}. {r['label']} — <code>{r['key']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "User menu empty hai.")
+            kb = InlineKeyboardBuilder()
+            for r in rows:
+                kb.button(text=f"✏️ Edit {r['label'][:28]}", callback_data=f"admin:edit_menu:{r['key']}")
+            kb.button(text="⬅️ Admin home", callback_data="admin:home")
+            kb.adjust(1)
+            section_markup = kb.as_markup()
         elif section == "force":
             rows = await db().fetch("SELECT channel_id,channel_username,invite_link,is_active FROM force_channels ORDER BY id")
             text = "📢 <b>Force Join Channels</b>\\n" + ("\\n".join(f"• {r['channel_username'] or r['channel_id']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Koi force-join channel configured nahi hai.")
+            kb = InlineKeyboardBuilder()
+            kb.button(text="➕ Add channel", callback_data="admin:add_force")
+            for r in rows:
+                action = "disable" if r['is_active'] else "enable"
+                label = "⏸ Disable" if r['is_active'] else "▶️ Enable"
+                kb.button(text=f"{label} {str(r['channel_username'] or r['channel_id'])[:24]}", callback_data=f"admin:{action}_force:{r['channel_id']}")
+            kb.button(text="⬅️ Admin home", callback_data="admin:home")
+            kb.adjust(1)
+            section_markup = kb.as_markup()
         elif section == "admins":
             rows = await db().fetch("SELECT telegram_id,is_active FROM admins ORDER BY telegram_id")
             text = "👮 <b>Database Admins</b>\\n" + ("\\n".join(f"• <code>{r['telegram_id']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Database admins list empty hai. Render ADMIN_IDS admins ko bhi access deta hai.")
+            kb = InlineKeyboardBuilder()
+            kb.button(text="➕ Add admin", callback_data="admin:add_admin")
+            kb.button(text="➖ Remove admin", callback_data="admin:remove_admin")
+            kb.button(text="⬅️ Admin home", callback_data="admin:home")
+            kb.adjust(2,1)
+            section_markup = kb.as_markup()
         elif section == "support":
             rows = await db().fetch("SELECT id,user_id,COALESCE(full_name,'') AS full_name,COALESCE(query,message,'') AS query,status,created_at FROM support_tickets ORDER BY created_at DESC LIMIT 15")
             text = "🆘 <b>Recent Support Tickets</b>\\n" + ("\\n\\n".join(f"#{r['id']} — {r['full_name'] or r['user_id']} — {r['status']}\\n{r['query'][:250]}" for r in rows) or "Abhi support tickets nahi hain.")
@@ -88,10 +130,29 @@ async def admin_navigation(cb: CallbackQuery):
             text = "Unknown admin section."
         await cb.answer()
         if cb.message:
-            await cb.message.answer(text, reply_markup=admin_keyboard())
+            await cb.message.answer(text, reply_markup=section_markup)
     except Exception:
         log.exception("Admin section %s failed for user %s", section, cb.from_user.id)
         await cb.answer("Section load nahi hua. Render Logs check karein.", show_alert=True)
+
+
+
+@router.callback_query(F.data.startswith(("admin:disable_force:", "admin:enable_force:")))
+async def toggle_force_channel(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    action, raw_id = cb.data.rsplit(":", 1)
+    try:
+        channel_id = int(raw_id)
+    except ValueError:
+        await cb.answer("Invalid channel ID.", show_alert=True)
+        return
+    active = action == "admin:enable_force"
+    await db().execute("UPDATE force_channels SET is_active=$1 WHERE channel_id=$2", active, channel_id)
+    await cb.answer("Channel enabled." if active else "Channel disabled.")
+    if cb.message:
+        await cb.message.answer("Channel status update ho gaya. Force Join section dobara kholkar check karein.", reply_markup=admin_keyboard())
 
 
 @router.message(Command("checkin", "check"))
@@ -257,6 +318,8 @@ async def edit_tier_start(cb: CallbackQuery, state: FSMContext):
 @router.message(AdminEditFSM.edit_tier, F.text)
 async def edit_tier_save(msg: Message, state: FSMContext):
     if not await is_admin(msg.from_user.id): await state.clear(); return
+    if (msg.text or "").strip().split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
+        await state.clear(); await msg.answer("Edit cancelled."); return
     parts=[p.strip() for p in (msg.text or "").split("|")]
     if len(parts)!=4 or not parts[0] or not parts[1].isdigit() or not parts[2].isdigit() or parts[3].lower() not in ("yes","no","true","false","on","off"):
         await msg.answer("Format galat hai. Use: Name | INR rupees | Stars | yes/no"); return
@@ -284,6 +347,8 @@ async def edit_setting_start(cb: CallbackQuery, state: FSMContext):
 @router.message(AdminEditFSM.edit_setting, F.text)
 async def edit_setting_save(msg: Message,state:FSMContext):
     if not await is_admin(msg.from_user.id): await state.clear(); return
+    if (msg.text or "").strip().split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
+        await state.clear(); await msg.answer("Edit cancelled."); return
     value=(msg.text or "").strip()
     if not value or value.startswith("/cancel"): await state.clear(); await msg.answer("Cancelled."); return
     data=await state.get_data()
@@ -305,6 +370,8 @@ async def edit_menu_start(cb:CallbackQuery,state:FSMContext):
 @router.message(AdminEditFSM.edit_menu,F.text)
 async def edit_menu_save(msg:Message,state:FSMContext):
     if not await is_admin(msg.from_user.id): await state.clear(); return
+    if (msg.text or "").strip().split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
+        await state.clear(); await msg.answer("Edit cancelled."); return
     p=[x.strip() for x in (msg.text or "").split("|")]
     if len(p)!=3 or not p[0] or p[1].lower() not in ("yes","no") or not p[2].isdigit():
         await msg.answer("Format: Label | yes/no | position"); return
