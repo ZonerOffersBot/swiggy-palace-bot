@@ -1,7 +1,8 @@
 import uuid
 import logging
 
-from aiogram import Router, F, Bot\nfrom aiogram.fsm.context import FSMContext\nfrom aiogram.fsm.state import State, StatesGroup
+from aiogram import Router, F, Bot
+from aiogram.fsm.context import FSMContext\nfrom aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, LabeledPrice, PreCheckoutQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -10,7 +11,11 @@ from db import db
 from services_ticket import atomic_create_and_deliver
 from utils import notify_admins
 
-router = Router()\n\n\nclass PromoFSM(StatesGroup):\n    waiting_code = State()
+router = Router()
+
+
+class PromoFSM(StatesGroup):
+    waiting_code = State()
 log = logging.getLogger(__name__)
 
 
