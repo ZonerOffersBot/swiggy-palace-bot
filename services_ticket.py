@@ -8,19 +8,19 @@ from config import EVENT_NAME, EVENT_DATE, VENUE
 
 log = logging.getLogger(__name__)
 
-def make_pdf(code, order_id, user_id):
+def make_pdf(code, order_id, user_id, event_name, event_date, venue):
     stream = io.BytesIO()
     pdf = canvas.Canvas(stream, pagesize=(420, 300))
-    pdf.setTitle("Event Ticket")
+    pdf.setTitle(f"{event_name[:80]} — Ticket")
     pdf.setFont("Helvetica-Bold", 18)
-    pdf.drawString(30, 255, EVENT_NAME[:50])
+    pdf.drawString(30, 255, event_name[:50])
     pdf.setFont("Helvetica", 12)
-    pdf.drawString(30, 220, f"Date: {EVENT_DATE[:80]}")
-    pdf.drawString(30, 195, f"Venue: {VENUE[:80]}")
+    pdf.drawString(30, 220, f"Date: {event_date[:80]}")
+    pdf.drawString(30, 195, f"Venue: {venue[:80]}")
     pdf.drawString(30, 155, f"Ticket code: {code}")
     pdf.drawString(30, 130, f"Order: {str(order_id)[:36]}")
     pdf.drawString(30, 105, f"Telegram ID: {user_id}")
-    pdf.drawString(30, 55, "Present this PDF at event entry.")
+    pdf.drawString(30, 55, "Please keep this ticket ready at the entrance.")
     pdf.save()
     stream.seek(0)
     return stream.getvalue()
@@ -53,11 +53,15 @@ async def atomic_create_and_deliver(bot: Bot, order_id):
             if not claimed:
                 return "already_delivered_or_in_progress"
     try:
-        pdf = make_pdf(claimed["ticket_code"], order_id, claimed["user_id"])
+        from utils import get_setting
+        event_name = await get_setting("event_name", EVENT_NAME)
+        event_date = await get_setting("event_date", EVENT_DATE)
+        venue = await get_setting("venue", VENUE)
+        pdf = make_pdf(claimed["ticket_code"], order_id, claimed["user_id"], event_name, event_date, venue)
         sent = await bot.send_document(
             claimed["user_id"],
             BufferedInputFile(pdf, filename=f"{claimed['ticket_code']}.pdf"),
-            caption=f"🎟️ <b>{EVENT_NAME}</b>\nTicket: <code>{claimed['ticket_code']}</code>\nKeep this PDF for entry."
+            caption=f"🎟️ <b>{event_name}</b>\\nTicket code: <code>{claimed['ticket_code']}</code>\\nPlease keep this PDF ready for entry."
         )
         updated = await db().fetchval(
             """UPDATE tickets SET pdf_file_id=$1, delivered_at=NOW(), delivery_started_at=NULL
