@@ -158,3 +158,89 @@ CREATE TABLE IF NOT EXISTS promo_redemptions (
   redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(code, user_id)
 );
+
+
+-- Wallet, manual deposits and one-time digital inventory for the Swiggy Swagger bot.
+CREATE TABLE IF NOT EXISTS wallets (
+  user_id BIGINT PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+  balance_paise BIGINT NOT NULL DEFAULT 0 CHECK (balance_paise >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS wallet_deposits (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(telegram_id),
+  amount_paise BIGINT NOT NULL CHECK (amount_paise >= 2500),
+  utr TEXT,
+  proof_file_id TEXT,
+  proof_type TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  reviewed_by BIGINT,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(utr)
+);
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(telegram_id),
+  kind TEXT NOT NULL CHECK (kind IN ('deposit','purchase','refund','promo','admin_adjustment')),
+  amount_paise BIGINT NOT NULL,
+  balance_after_paise BIGINT NOT NULL CHECK (balance_after_paise >= 0),
+  reference TEXT NOT NULL UNIQUE,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS inventory_categories (
+  id BIGSERIAL PRIMARY KEY,
+  key TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  price_paise BIGINT NOT NULL DEFAULT 100 CHECK (price_paise >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  position INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO inventory_categories(key,label,price_paise,position,is_active) VALUES
+ ('swiggy_fresh','Swiggy Fresh JSON',10000,1,TRUE),
+ ('swiggy_claim','Swiggy Claim JSON',10000,2,TRUE),
+ ('food_done','Food Done JSON',10000,3,TRUE)
+ON CONFLICT(key) DO NOTHING;
+CREATE TABLE IF NOT EXISTS digital_inventory (
+  id BIGSERIAL PRIMARY KEY,
+  category_id BIGINT NOT NULL REFERENCES inventory_categories(id),
+  item_type TEXT NOT NULL CHECK (item_type IN ('document','photo','text')),
+  telegram_file_id TEXT,
+  file_name TEXT,
+  mime_type TEXT,
+  file_size BIGINT,
+  caption TEXT,
+  text_content TEXT,
+  status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available','sold','disabled')),
+  added_by BIGINT NOT NULL,
+  sold_to BIGINT REFERENCES users(telegram_id),
+  sold_at TIMESTAMPTZ,
+  purchase_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK ((item_type='text' AND text_content IS NOT NULL) OR (item_type IN ('document','photo') AND telegram_file_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS digital_inventory_available_idx ON digital_inventory(category_id,id) WHERE status='available';
+CREATE TABLE IF NOT EXISTS inventory_purchases (
+  purchase_id UUID PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(telegram_id),
+  category_id BIGINT NOT NULL REFERENCES inventory_categories(id),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price_paise BIGINT NOT NULL CHECK (unit_price_paise >= 0),
+  total_paise BIGINT NOT NULL CHECK (total_paise >= 0),
+  status TEXT NOT NULL DEFAULT 'paid' CHECK (status IN ('paid','delivery_pending','delivered','refunded')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE digital_inventory ADD COLUMN IF NOT EXISTS purchase_id UUID;
+CREATE TABLE IF NOT EXISTS inventory_purchase_items (
+  purchase_id UUID NOT NULL REFERENCES inventory_purchases(purchase_id),
+  inventory_id BIGINT NOT NULL UNIQUE REFERENCES digital_inventory(id),
+  delivered_at TIMESTAMPTZ,
+  PRIMARY KEY(purchase_id,inventory_id)
+);
+INSERT INTO user_menu(key,label,position,is_active) VALUES
+ ('balance','💰 My Balance / Add Balance',4,TRUE),
+ ('buyfiles','🛒 Buy JSON Files',5,TRUE),
+ ('purchases','📦 My Purchases',6,TRUE)
+ON CONFLICT(key) DO NOTHING;
