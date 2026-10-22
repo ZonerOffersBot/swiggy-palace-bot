@@ -31,9 +31,9 @@ async def admin_home_text():
     orders = await db().fetchval("SELECT COUNT(*) FROM orders")
     paid = await db().fetchval("SELECT COUNT(*) FROM orders WHERE status='paid'")
     tickets = await db().fetchval("SELECT COUNT(*) FROM tickets")
-    return (f"🛠️ <b>{EVENT_NAME} Admin Panel</b>\\n\\n"
-            f"👥 Users: {users}\\n🧾 Orders: {orders}\\n"
-            f"✅ Paid orders: {paid}\\n🎟 Tickets issued: {tickets}\\n\\n"
+    return (f"🛠️ <b>{EVENT_NAME} Admin Panel</b>\n\n"
+            f"👥 Users: {users}\n🧾 Orders: {orders}\n"
+            f"✅ Paid orders: {paid}\n🎟 Tickets issued: {tickets}\n\n"
             "Neeche kisi section ko select karein.")
 
 
@@ -41,8 +41,8 @@ async def admin_home_text():
 async def admin_panel(msg: Message):
     if not await is_admin(msg.from_user.id):
         await msg.answer(
-            "⛔ Admin access nahi hai.\\n"
-            f"Aapki Telegram ID: <code>{msg.from_user.id}</code>\\n\\n"
+            "⛔ Admin access nahi hai.\n"
+            f"Aapki Telegram ID: <code>{msg.from_user.id}</code>\n\n"
             "Render → Environment mein ADMIN_IDS ke andar ye ID add karein "
             "(multiple admins ke liye comma-separated IDs), phir service redeploy/restart karein."
         )
@@ -66,7 +66,7 @@ async def admin_navigation(cb: CallbackQuery):
             text = await admin_home_text()
         elif section == "tiers":
             rows = await db().fetch("SELECT id,label,price_inr,price_stars,is_active FROM ticket_types ORDER BY position,id")
-            text = "🎟 <b>Ticket Types</b>\\n" + ("\\n".join(f"• {r['label']} — ₹{r['price_inr']/100:.2f} / ⭐ {r['price_stars']} — {'Active' if r['is_active'] else 'Inactive'} (ID {r['id']})" for r in rows) or "Abhi koi ticket type nahi hai.")
+            text = "🎟 <b>Ticket Types</b>\n" + ("\n".join(f"• {r['label']} — ₹{r['price_inr']/100:.2f} / ⭐ {r['price_stars']} — {'Active' if r['is_active'] else 'Inactive'} (ID {r['id']})" for r in rows) or "Abhi koi ticket type nahi hai.")
             kb = InlineKeyboardBuilder()
             for r in rows:
                 kb.button(text=f"✏️ Edit {r['label'][:24]}", callback_data=f"admin:edit_tier:{r['id']}")
@@ -76,7 +76,7 @@ async def admin_navigation(cb: CallbackQuery):
             section_markup = kb.as_markup()
         elif section == "files":
             rows = await db().fetch("SELECT f.id,t.label,f.file_type,f.is_active FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id ORDER BY f.position,f.id LIMIT 30")
-            text = "📁 <b>Ticket Files (latest 30)</b>\\n" + ("\\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
+            text = "📁 <b>Ticket Files (latest 30)</b>\n" + ("\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
             kb = InlineKeyboardBuilder()
             tiers = await db().fetch("SELECT id,label FROM ticket_types ORDER BY position,id")
             for r in tiers:
@@ -86,7 +86,7 @@ async def admin_navigation(cb: CallbackQuery):
             section_markup = kb.as_markup()
         elif section == "settings":
             rows = await db().fetch("SELECT key,value FROM bot_settings ORDER BY key")
-            text = "⚙️ <b>Settings</b>\\n" + ("\\n".join(f"• <code>{r['key']}</code>: {r['value'][:150]}" for r in rows) or "Custom settings abhi set nahi hain.") + "\\nEvent details yahin se edit kar sakte hain."
+            text = "⚙️ <b>Settings</b>\n" + ("\n".join(f"• <code>{r['key']}</code>: {r['value'][:150]}" for r in rows) or "Custom settings abhi set nahi hain.") + "\nEvent details yahin se edit kar sakte hain."
             kb = InlineKeyboardBuilder()
             for key, label in (("event_name","Event name"),("event_date","Event date"),("venue","Venue"),("welcome_msg","Welcome message")):
                 kb.button(text=f"✏️ {label}", callback_data=f"admin:edit_setting:{key}")
@@ -95,7 +95,7 @@ async def admin_navigation(cb: CallbackQuery):
             section_markup = kb.as_markup()
         elif section == "menu":
             rows = await db().fetch("SELECT key,label,is_active,position FROM user_menu ORDER BY position")
-            text = "🧭 <b>User Menu</b>\\n" + ("\\n".join(f"• {r['position']}. {r['label']} — <code>{r['key']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "User menu empty hai.")
+            text = "🧭 <b>User Menu</b>\n" + ("\n".join(f"• {r['position']}. {r['label']} — <code>{r['key']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "User menu empty hai.")
             kb = InlineKeyboardBuilder()
             for r in rows:
                 kb.button(text=f"✏️ Edit {r['label'][:28]}", callback_data=f"admin:edit_menu:{r['key']}")
@@ -104,7 +104,7 @@ async def admin_navigation(cb: CallbackQuery):
             section_markup = kb.as_markup()
         elif section == "force":
             rows = await db().fetch("SELECT channel_id,channel_username,invite_link,is_active FROM force_channels ORDER BY id")
-            text = "📢 <b>Force Join Channels</b>\\n" + ("\\n".join(f"• {r['channel_username'] or r['channel_id']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Koi force-join channel configured nahi hai.")
+            text = "📢 <b>Force Join Channels</b>\n" + ("\n".join(f"• {r['channel_username'] or r['channel_id']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Koi force-join channel configured nahi hai.")
             kb = InlineKeyboardBuilder()
             kb.button(text="➕ Add channel", callback_data="admin:add_force")
             for r in rows:
@@ -116,7 +116,7 @@ async def admin_navigation(cb: CallbackQuery):
             section_markup = kb.as_markup()
         elif section == "admins":
             rows = await db().fetch("SELECT telegram_id,is_active FROM admins ORDER BY telegram_id")
-            text = "👮 <b>Database Admins</b>\\n" + ("\\n".join(f"• <code>{r['telegram_id']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Database admins list empty hai. Render ADMIN_IDS admins ko bhi access deta hai.")
+            text = "👮 <b>Database Admins</b>\n" + ("\n".join(f"• <code>{r['telegram_id']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Database admins list empty hai. Render ADMIN_IDS admins ko bhi access deta hai.")
             kb = InlineKeyboardBuilder()
             kb.button(text="➕ Add admin", callback_data="admin:add_admin")
             kb.button(text="➖ Remove admin", callback_data="admin:remove_admin")
@@ -125,7 +125,7 @@ async def admin_navigation(cb: CallbackQuery):
             section_markup = kb.as_markup()
         elif section == "support":
             rows = await db().fetch("SELECT id,user_id,COALESCE(full_name,'') AS full_name,COALESCE(query,message,'') AS query,status,created_at FROM support_tickets ORDER BY created_at DESC LIMIT 15")
-            text = "🆘 <b>Recent Support Tickets</b>\\n" + ("\\n\\n".join(f"#{r['id']} — {r['full_name'] or r['user_id']} — {r['status']}\\n{r['query'][:250]}" for r in rows) or "Abhi support tickets nahi hain.")
+            text = "🆘 <b>Recent Support Tickets</b>\n" + ("\n\n".join(f"#{r['id']} — {r['full_name'] or r['user_id']} — {r['status']}\n{r['query'][:250]}" for r in rows) or "Abhi support tickets nahi hain.")
         else:
             text = "Unknown admin section."
         await cb.answer()
