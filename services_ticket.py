@@ -61,7 +61,7 @@ async def atomic_create_and_deliver(bot: Bot, order_id):
         sent = await bot.send_document(
             claimed["user_id"],
             BufferedInputFile(pdf, filename=f"{claimed['ticket_code']}.pdf"),
-            caption=f"🎟️ <b>{event_name}</b>\\nTicket code: <code>{claimed['ticket_code']}</code>\\nPlease keep this PDF ready for entry."
+            caption=f"🎟️ <b>{event_name}</b>\nTicket code: <code>{claimed['ticket_code']}</code>\nPlease keep this PDF ready for entry."
         )
         updated = await db().fetchval(
             """UPDATE tickets SET pdf_file_id=$1, delivered_at=NOW(), delivery_started_at=NULL
