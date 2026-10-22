@@ -180,44 +180,107 @@ async def deposit_review(cb: CallbackQuery, bot: Bot):
     if not await is_admin(cb.from_user.id):
         await cb.answer("Admin only.", show_alert=True)
         return
+
     action, raw_id = cb.data.rsplit(":", 1)
-    dep_id = int(raw_id)
+    try:
+        dep_id = int(raw_id)
+    except (TypeError, ValueError):
+        await cb.answer("Invalid deposit request.", show_alert=True)
+        return
+
     user_id = None
     amount = None
-    async with db().acquire() as conn:
-        async with conn.transaction():
-            dep = await conn.fetchrow("SELECT * FROM wallet_deposits WHERE id=$1 FOR UPDATE", dep_id)
-            if not dep or dep["status"] != "pending":
-                await cb.answer("Request pehle hi process ho chuki hai.", show_alert=True)
-                return
-            user_id, amount = dep["user_id"], dep["amount_paise"]
-            if action == "admin:deposit_approve":
-                await conn.execute("INSERT INTO wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING", user_id)
-                wallet = await conn.fetchrow("SELECT balance_paise FROM wallets WHERE user_id=$1 FOR UPDATE", user_id)
-                new_balance = wallet["balance_paise"] + amount
-                await conn.execute("UPDATE wallets SET balance_paise=$1,updated_at=NOW() WHERE user_id=$2", new_balance, user_id)
-                await conn.execute("UPDATE wallet_deposits SET status='approved',reviewed_by=$1,reviewed_at=NOW() WHERE id=$2", cb.from_user.id, dep_id)
-                await conn.execute(
-                    """INSERT INTO wallet_transactions(user_id,kind,amount_paise,balance_after_paise,reference,details)
-                       VALUES($1,'deposit',$2,$3,$4,jsonb_build_object('deposit_id',$5,'reviewed_by',$6,'utr',$7))""",
-                    user_id, amount, new_balance, "deposit:" + str(dep_id), dep_id, cb.from_user.id, dep["utr"]
+    approved = action == "admin:deposit_approve"
+    try:
+        async with db().acquire() as conn:
+            async with conn.transaction():
+                dep = await conn.fetchrow(
+                    "SELECT * FROM wallet_deposits WHERE id=$1 FOR UPDATE", dep_id
                 )
-            else:
-                await conn.execute("UPDATE wallet_deposits SET status='rejected',reviewed_by=$1,reviewed_at=NOW() WHERE id=$2", cb.from_user.id, dep_id)
-    if action == "admin:deposit_approve":
-        await cb.answer("Deposit approved.")
+                if not dep:
+                    await cb.answer("Deposit request nahi mili.", show_alert=True)
+                    return
+                if dep["status"] != "pending":
+                    await cb.answer("Request pehle hi " + str(dep["status"]) + " hai.", show_alert=True)
+                    return
+
+                user_id, amount = int(dep["user_id"]), int(dep["amount_paise"])
+                if approved:
+                    # Idempotency guard: never credit the same deposit twice.
+                    reference = "deposit:" + str(dep_id)
+                    existing_tx = await conn.fetchrow(
+                        "SELECT id,balance_after_paise FROM wallet_transactions WHERE reference=$1",
+                        reference,
+                    )
+                    await conn.execute(
+                        "INSERT INTO wallets(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",
+                        user_id,
+                    )
+                    if existing_tx:
+                        # A ledger entry already exists; preserve its credit and only repair status.
+                        await conn.execute(
+                            "UPDATE wallet_deposits SET status='approved',reviewed_by=$1,reviewed_at=NOW() WHERE id=$2 AND status='pending'",
+                            cb.from_user.id, dep_id,
+                        )
+                    else:
+                        wallet = await conn.fetchrow(
+                            "SELECT balance_paise FROM wallets WHERE user_id=$1 FOR UPDATE", user_id
+                        )
+                        if not wallet:
+                            raise RuntimeError("Wallet row could not be created")
+                        new_balance = int(wallet["balance_paise"]) + amount
+                        await conn.execute(
+                            "UPDATE wallets SET balance_paise=$1,updated_at=NOW() WHERE user_id=$2",
+                            new_balance, user_id,
+                        )
+                        await conn.execute(
+                            """INSERT INTO wallet_transactions
+                               (user_id,kind,amount_paise,balance_after_paise,reference,details)
+                               VALUES($1,'deposit',$2,$3,$4,jsonb_build_object('deposit_id',$5,'reviewed_by',$6,'utr',$7))
+                               ON CONFLICT(reference) DO NOTHING""",
+                            user_id, amount, new_balance, reference, dep_id, cb.from_user.id, dep["utr"],
+                        )
+                        await conn.execute(
+                            "UPDATE wallet_deposits SET status='approved',reviewed_by=$1,reviewed_at=NOW() WHERE id=$2 AND status='pending'",
+                            cb.from_user.id, dep_id,
+                        )
+                else:
+                    await conn.execute(
+                        "UPDATE wallet_deposits SET status='rejected',reviewed_by=$1,reviewed_at=NOW() WHERE id=$2 AND status='pending'",
+                        cb.from_user.id, dep_id,
+                    )
+    except Exception:
+        log.exception("Deposit review failed: deposit_id=%s admin_id=%s action=%s", dep_id, cb.from_user.id, action)
+        await cb.answer("Database error: approval save nahi hui. Logs check karein.", show_alert=True)
+        if cb.message:
+            await cb.message.answer(
+                "⚠️ Deposit #" + str(dep_id) + " process nahi hui. Status pending hi rehna chahiye. "
+                "Render logs mein 'Deposit review failed' error check karein."
+            )
+        return
+
+    if approved:
+        await cb.answer("Deposit approved; wallet updated.")
         try:
-            await bot.send_message(user_id, "✅ Deposit #" + str(dep_id) + " approved. Wallet mein " + money(amount) + " add ho gaye.")
+            await bot.send_message(
+                user_id,
+                "✅ Deposit #" + str(dep_id) + " approved. Wallet mein " + money(amount) + " add ho gaye.",
+            )
         except Exception:
             log.exception("Could not notify user about approved deposit %s", dep_id)
-        await cb.message.answer("Approved: #" + str(dep_id) + " — " + money(amount))
+        if cb.message:
+            await cb.message.answer("✅ Approved: #" + str(dep_id) + " — " + money(amount))
     else:
         await cb.answer("Deposit rejected.")
         try:
-            await bot.send_message(user_id, "❌ Deposit request #" + str(dep_id) + " reject hui. Details ke liye admin se contact karein.")
+            await bot.send_message(
+                user_id,
+                "❌ Deposit request #" + str(dep_id) + " reject hui. Details ke liye admin se contact karein.",
+            )
         except Exception:
             log.exception("Could not notify user about rejected deposit %s", dep_id)
-        await cb.message.answer("Rejected: #" + str(dep_id))
+        if cb.message:
+            await cb.message.answer("❌ Rejected: #" + str(dep_id))
 
 
 @router.callback_query(F.data == "menu:buyfiles")
