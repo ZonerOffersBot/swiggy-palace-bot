@@ -94,13 +94,16 @@ async def admin_navigation(cb: CallbackQuery):
             kb.adjust(2,2,1)
             section_markup = kb.as_markup()
         elif section == "menu":
-            rows = await db().fetch("SELECT key,label,is_active,position FROM user_menu ORDER BY position")
-            text = "🧭 <b>User Menu</b>\n" + ("\n".join(f"• {r['position']}. {r['label']} — <code>{r['key']}</code> — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "User menu empty hai.")
+            rows = await db().fetch("SELECT key,label,is_active,position FROM user_menu ORDER BY position,key")
+            text = "🧭 <b>User Menu</b>\nButton ka naam badalne ke liye Rename, aur dikhana/chhupana badalne ke liye Show/Hide dabayein. Button ka action fixed rahega.\n\n" + ("\n".join(f"• {r['position']}. {r['label']} — <code>{r['key']}</code> — {'Visible' if r['is_active'] else 'Hidden'}" for r in rows) or "User menu empty hai.")
             kb = InlineKeyboardBuilder()
             for r in rows:
-                kb.button(text=f"✏️ Edit {r['label'][:28]}", callback_data=f"admin:edit_menu:{r['key']}")
+                kb.button(text=f"✏️ Rename: {r['label'][:20]}", callback_data=f"admin:edit_menu:{r['key']}")
+                action = "disable" if r["is_active"] else "enable"
+                label = "🙈 Hide" if r["is_active"] else "👁 Show"
+                kb.button(text=label, callback_data=f"admin:{action}_menu:{r['key']}")
             kb.button(text="⬅️ Admin home", callback_data="admin:home")
-            kb.adjust(1)
+            kb.adjust(2, 2, 2, 1)
             section_markup = kb.as_markup()
         elif section == "force":
             rows = await db().fetch("SELECT channel_id,channel_username,invite_link,is_active FROM force_channels ORDER BY id")
@@ -364,7 +367,7 @@ async def edit_menu_start(cb:CallbackQuery,state:FSMContext):
     if not row: await cb.answer("Menu item nahi mila.",show_alert=True); return
     await state.set_state(AdminEditFSM.edit_menu); await state.update_data(menu_key=key)
     await cb.answer()
-    await cb.message.answer(f"🧭 Current: {row['label']} (active={row['is_active']}, position={row['position']})\nNaya format bhejein:\n<code>Label | active yes/no | position</code>\nExample: Book Ticket | yes | 1")
+    await cb.message.answer(f"✏️ Current button name: <b>{row['label']}</b>\nSirf naya button name bhejein (max 50 characters).\nIs button ka action change nahi hoga; sirf naam badlega.\nCancel: /cancel")
 
 
 @router.message(AdminEditFSM.edit_menu,F.text)
@@ -372,12 +375,35 @@ async def edit_menu_save(msg:Message,state:FSMContext):
     if not await is_admin(msg.from_user.id): await state.clear(); return
     if (msg.text or "").strip().split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
         await state.clear(); await msg.answer("Edit cancelled."); return
-    p=[x.strip() for x in (msg.text or "").split("|")]
-    if len(p)!=3 or not p[0] or p[1].lower() not in ("yes","no") or not p[2].isdigit():
-        await msg.answer("Format: Label | yes/no | position"); return
+    label=(msg.text or "").strip()
+    if not label or len(label)>50:
+        await msg.answer("Button name 1–50 characters ka bhejein. Cancel: /cancel"); return
     d=await state.get_data()
-    await db().execute("UPDATE user_menu SET label=$1,is_active=$2,position=$3 WHERE key=$4",p[0][:80],p[1].lower()=="yes",int(p[2]),d["menu_key"])
-    await state.clear(); await msg.answer("✅ User menu update ho gaya.")
+    await db().execute("UPDATE user_menu SET label=$1 WHERE key=$2",label,d["menu_key"])
+    await state.clear()
+    await msg.answer(f"✅ Button ka naam update ho gaya: <b>{label}</b>\nUser ko naya menu dikhane ke liye /start dobara chalayein. Action pehle jaisa hi rahega.")
+
+
+@router.callback_query(F.data.startswith(("admin:disable_menu:", "admin:enable_menu:")))
+async def toggle_menu_item(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    action, key = cb.data.rsplit(":", 1)
+    active = action == "admin:enable_menu"
+    updated = await db().fetchval(
+        "UPDATE user_menu SET is_active=$1 WHERE key=$2 RETURNING key",
+        active, key
+    )
+    if not updated:
+        await cb.answer("Menu item nahi mila.", show_alert=True)
+        return
+    await cb.answer("Menu item visible." if active else "Menu item hidden.")
+    if cb.message:
+        await cb.message.answer(
+            "✅ Menu visibility update ho gayi. User ko updated menu dikhane ke liye /start dobara chalayein.",
+            reply_markup=admin_keyboard()
+        )
 
 
 @router.callback_query(F.data == "admin:add_admin")
