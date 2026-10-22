@@ -54,7 +54,7 @@ async def admin_panel(msg: Message):
         await msg.answer("⚠️ Admin panel database error. Render Logs mein /admin ke baad wali traceback check karein.")
 
 
-@router.callback_query(F.data.startswith("admin:"))
+@router.callback_query(F.data.in_({"admin:home", "admin:stats", "admin:tiers", "admin:files", "admin:settings", "admin:menu", "admin:force", "admin:admins", "admin:support"}))
 async def admin_navigation(cb: CallbackQuery):
     if not await is_admin(cb.from_user.id):
         await cb.answer("Admin only.", show_alert=True)
