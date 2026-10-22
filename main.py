@@ -567,7 +567,9 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif data.startswith("orderview:") or data.startswith("userview:") or data.startswith("a_") or data.startswith("approvepay:") or data.startswith("rejectpay:") or data.startswith("placed:") or data.startswith("complete:") or data.startswith("refund:") or data.startswith("reqaddr:") or data.startswith("reqcart:") or data.startswith("track:"):
         await admin_callback(q,context,data)
     elif data.startswith("prioapprove:") or data.startswith("prioreject:"):
-        await admin_priority_callback(q,data)
+        await admin_priority_callback(q, context, data)
+    elif data.startswith("secondapprove:") or data.startswith("secondreject:"):
+        await admin_callback(q, context, data)
 
 async def submit_seller_application(target,context):
     uid=target.from_user.id if hasattr(target,"from_user") else target.effective_user.id
@@ -647,19 +649,55 @@ async def admin_callback(q,context,data):
     elif data=="a_stats":
         s=await db.stats(); await q.message.reply_text(f"📊 <b>Palace Stats</b>\n👥 Customers: {s['customers']}\n📦 Orders: {s['orders']}\n🏁 Completed: {s['completed']}\n⏳ Active: {s['active']}\n🍔 Swiggy Value: ₹{s['swiggy']:.2f}\n💰 Palace Charges: ₹{s['charges']:.2f}\n↩️ Refunds: ₹{s['refunds']:.2f}",parse_mode="HTML")
     elif data=="a_second":
-        dbx=await db.connect(); cur=await dbx.execute("SELECT customer_id,paid_amount,utr FROM second_order_unlocks WHERE status='pending' ORDER BY created_at ASC LIMIT 20"); rows=await cur.fetchall(); await dbx.close()
+        if not await is_admin(uid): return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT customer_id,paid_amount,utr,proof,status FROM second_order_unlocks WHERE status='pending' ORDER BY created_at ASC LIMIT 20")
+        rows=await cur.fetchall(); await dbx.close()
         if not rows:
-            await q.message.reply_text("🔓 No pending 2nd-order unlock payments."); return
+            await q.message.reply_text("🔓 No pending 2nd-order unlock payments.",reply_markup=admin_menu()); return
         for x in rows:
-            kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Verify",callback_data=f"secondapprove:{x['customer_id']}"),InlineKeyboardButton("❌ Reject",callback_data=f"secondreject:{x['customer_id']}")]])
-            await q.message.reply_text(f"🔓 <b>2nd Order Unlock</b>\n👤 Customer: <code>{x['customer_id']}</code>\n💰 ₹{x['paid_amount']:.2f}\nUTR: {x['utr']}",parse_mode="HTML",reply_markup=kb)
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve Unlock",callback_data=f"secondapprove:{x['customer_id']}"),InlineKeyboardButton("❌ Reject",callback_data=f"secondreject:{x['customer_id']}")]])
+            cap=f"🔓 <b>2ND ORDER UNLOCK PAYMENT</b>\\n👤 Customer: <code>{x['customer_id']}</code>\\n💰 Amount: ₹{float(x['paid_amount'] or 0):.2f}\\n🧾 UTR: <code>{x['utr'] or '-'}</code>\\n📌 Status: {x['status']}\\n\\nManual decision required."
+            try:
+                if x["proof"]:
+                    await q.message.reply_photo(x["proof"],caption=cap,parse_mode="HTML",reply_markup=kb)
+                else:
+                    await q.message.reply_text(cap+"\\n⚠️ Screenshot missing.",parse_mode="HTML",reply_markup=kb)
+            except Exception:
+                await q.message.reply_text(cap,parse_mode="HTML",reply_markup=kb)
+    elif data=="a_priority":
+        if not await is_admin(uid): return
+        dbx=await db.connect()
+        cur=await dbx.execute("SELECT customer_id,amount,utr,proof,created_at,status FROM priority_payments WHERE status='pending' ORDER BY created_at ASC LIMIT 20")
+        rows=await cur.fetchall(); await dbx.close()
+        if not rows:
+            await q.message.reply_text("⭐ No pending High Priority payments.",reply_markup=admin_menu()); return
+        for x in rows:
+            cid=int(x["customer_id"])
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve Priority",callback_data=f"prioapprove:{cid}"),InlineKeyboardButton("❌ Reject",callback_data=f"prioreject:{cid}")]])
+            cap=f"⭐ <b>HIGH PRIORITY PAYMENT</b>\\n👤 Customer: <code>{cid}</code>\\n💰 Amount: ₹{float(x['amount'] or 0):.2f}\\n🧾 UTR: <code>{x['utr'] or '-'}</code>\\n📌 Status: {x['status']}\\n\\nManual decision required."
+            try:
+                if x["proof"]:
+                    await q.message.reply_photo(x["proof"],caption=cap,parse_mode="HTML",reply_markup=kb)
+                else:
+                    await q.message.reply_text(cap+"\\n⚠️ Screenshot missing.",parse_mode="HTML",reply_markup=kb)
+            except Exception:
+                await q.message.reply_text(cap,parse_mode="HTML",reply_markup=kb)
     elif data.startswith("secondapprove:") or data.startswith("secondreject:"):
-        if uid!=OWNER_ID: return
+        if not await is_admin(uid): return
         cid=int(data.split(":",1)[1]); ok=data.startswith("secondapprove:")
+        assigned=await db.get_customer_admin(cid)
+        if uid!=OWNER_ID and assigned!=uid:
+            await q.answer("Only assigned Admin or Super Admin can decide.",show_alert=True); return
+        pending=await db.has_second_order_unlock(cid)
+        if not pending or pending["status"]!="pending":
+            await q.answer("No pending unlock payment.",show_alert=True); return
         await db.verify_second_order_unlock(cid,uid,ok)
-        try: await context.bot.send_message(cid,"✅ 2nd order unlock verified. Ab New Order open karke next order bana sakte ho." if ok else "❌ 2nd order unlock payment rejected.",parse_mode="HTML")
+        try: await context.bot.send_message(cid,"✅ 2nd order unlock payment manually approved. Ab New Order open karke next order bana sakte ho." if ok else "❌ 2nd order unlock payment rejected by Admin.",parse_mode="HTML")
         except Exception: pass
-        await q.message.reply_text("✅ Unlock verified." if ok else "❌ Unlock rejected.")
+        try: await q.message.edit_reply_markup(reply_markup=None)
+        except Exception: pass
+        await q.message.reply_text("✅ Unlock manually approved." if ok else "❌ Unlock manually rejected.")
     elif data=="a_back":
         await q.message.reply_text("👑 <b>Admin Panel</b>",parse_mode="HTML",reply_markup=admin_menu())
     elif data=="a_receive":
@@ -1140,7 +1178,7 @@ async def approve_payment(q,oid,ok):
     else:
         await q.message.reply_text(f"❌ Payment rejected. {oid}\n👤 Verified by: {who}")
 
-async def admin_priority_callback(q,data):
+async def admin_priority_callback(q,context,data):
     if not await is_admin(q.from_user.id):
         await q.answer("Not authorized", show_alert=True)
         return
@@ -1161,6 +1199,11 @@ async def admin_priority_callback(q,data):
         pending=await cur.fetchone()
         if not pending:
             await q.answer("No pending priority payment", show_alert=True)
+            return
+
+        assigned_admin = await db.get_customer_admin(uid)
+        if q.from_user.id != OWNER_ID and assigned_admin != q.from_user.id:
+            await q.answer("Only assigned Admin or Super Admin can decide.", show_alert=True)
             return
 
         await dbx.execute(
