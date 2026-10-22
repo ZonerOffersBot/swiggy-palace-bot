@@ -133,3 +133,26 @@ ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS file_size BIGINT;
 ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS caption TEXT;
 ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS added_by BIGINT;
 UPDATE ticket_files SET file_id = COALESCE(file_id, telegram_file_id) WHERE file_id IS NULL;
+
+-- Free-ticket promo codes, redeemed atomically with order creation.
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_amount_check;
+ALTER TABLE orders ADD CONSTRAINT orders_amount_nonnegative CHECK (amount >= 0);
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_gateway_check;
+ALTER TABLE orders ADD CONSTRAINT orders_gateway_allowed CHECK (gateway IN ('phonepe','stars','promo'));
+CREATE TABLE IF NOT EXISTS promo_codes (
+  code TEXT PRIMARY KEY,
+  max_uses INTEGER,
+  uses_count INTEGER NOT NULL DEFAULT 0 CHECK (uses_count >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (max_uses IS NULL OR max_uses > 0)
+);
+CREATE TABLE IF NOT EXISTS promo_redemptions (
+  id BIGSERIAL PRIMARY KEY,
+  code TEXT NOT NULL REFERENCES promo_codes(code),
+  user_id BIGINT NOT NULL REFERENCES users(telegram_id),
+  order_id UUID NOT NULL UNIQUE REFERENCES orders(order_id),
+  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(code, user_id)
+);
