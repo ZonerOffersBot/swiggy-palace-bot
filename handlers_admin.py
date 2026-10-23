@@ -19,7 +19,7 @@ def admin_keyboard():
         ("📁 Ticket Files", "admin:files"), ("💰 Wallet", "admin:wallet_home"),
         ("🛒 JSON Shop Files", "admin:wallet_inventory"), ("🧾 Transaction History", "admin:wallet_history"), ("⚙️ Settings", "admin:settings"),
         ("🧭 User Menu", "admin:menu"), ("📢 Force Join", "admin:force"),
-        ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
+        ("👥 User & Wallet Control", "admin:users"), ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
         ("🔄 Refresh", "admin:home"),
     ]
     for label, data in buttons:
