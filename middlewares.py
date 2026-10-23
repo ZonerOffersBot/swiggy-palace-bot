@@ -42,14 +42,34 @@ class ForceJoinMiddleware(BaseMiddleware):
             return await handler(event, data)
         pending = []
         bot = data["bot"]
+        verification_errors = []
         for row in rows:
-            try:
-                member = await bot.get_chat_member(row["channel_id"], user.id)
-                if member.status in ("left", "kicked") or (member.status == "restricted" and not getattr(member, "is_member", False)):
-                    pending.append(row)
-            except Exception:
-                # Fail closed if the bot cannot verify membership.
-                log.exception("Force-join membership check failed for %s", row["channel_id"])
+            member = None
+            # Prefer the numeric channel ID, but fall back to the saved @username
+            # in case an old/mistyped channel ID is stored in the admin panel.
+            candidates = [row["channel_id"]]
+            username = (row["channel_username"] or "").strip()
+            if username:
+                username = username.lstrip("@")
+                candidates.append("@" + username)
+            for chat_ref in candidates:
+                try:
+                    member = await bot.get_chat_member(chat_ref, user.id)
+                    break
+                except Exception as exc:
+                    verification_errors.append((row, chat_ref, exc))
+                    log.warning(
+                        "Force-join lookup failed for channel_ref=%s user_id=%s: %s",
+                        chat_ref, user.id, exc
+                    )
+            if member is None:
+                # Never silently let users bypass a required channel, but make
+                # the failure diagnosable instead of falsely claiming they did not join.
+                pending.append(row)
+                continue
+            if member.status in ("left", "kicked") or (
+                member.status == "restricted" and not getattr(member, "is_member", False)
+            ):
                 pending.append(row)
         if not pending:
             return await handler(event, data)
@@ -62,7 +82,18 @@ class ForceJoinMiddleware(BaseMiddleware):
                 kb.button(text="📢 Join required channel", url=row["invite_link"])
         kb.button(text="✅ I Joined — Verify", callback_data="forcejoin:verify")
         kb.adjust(1)
+        has_verification_error = any(
+            row["channel_id"] == failed_row["channel_id"]
+            for failed_row, _, _ in verification_errors
+            for row in pending
+        )
         text = "🔒 Bot use karne ke liye pehle required channel(s) join karein."
+        if has_verification_error:
+            text += (
+                "\\n\\n⚠️ Channel membership verify nahi ho pa rahi. "
+                "Bot ko channel mein admin banayein aur Admin Panel mein saved "
+                "channel ID / @username check karein, phir Verify dabayein."
+            )
         if isinstance(event, Message):
             await event.answer(text, reply_markup=kb.as_markup())
         elif isinstance(event, CallbackQuery):
