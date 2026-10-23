@@ -101,3 +101,31 @@ class ForceJoinMiddleware(BaseMiddleware):
             if event.message:
                 await event.message.answer(text, reply_markup=kb.as_markup())
         return
+
+
+class BlacklistMiddleware(BaseMiddleware):
+    """Block blacklisted non-admin users before any message or callback handler."""
+    async def __call__(self, handler, event, data):
+        user = getattr(event, "from_user", None)
+        if user is None or await is_admin(user.id):
+            return await handler(event, data)
+        try:
+            blocked = await db().fetchval(
+                "SELECT EXISTS(SELECT 1 FROM user_blacklist WHERE user_id=$1)",
+                user.id,
+            )
+        except Exception:
+            log.exception("Blacklist lookup failed for user %s", user.id)
+            # Fail closed for ordinary users if blacklist status cannot be verified.
+            if isinstance(event, Message):
+                await event.answer("⚠️ User access verify nahi ho pa raha. Thodi der baad try karein.")
+            elif isinstance(event, CallbackQuery):
+                await event.answer("User access verify nahi ho pa raha. Baad mein try karein.", show_alert=True)
+            return
+        if not blocked:
+            return await handler(event, data)
+        if isinstance(event, Message):
+            await event.answer("🚫 Aapka bot access Main Admin ne block kiya hai. Agar ye galti hai, admin se contact karein.")
+        elif isinstance(event, CallbackQuery):
+            await event.answer("🚫 Aapka bot access block hai.", show_alert=True)
+        return
