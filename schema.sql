@@ -155,9 +155,21 @@ CREATE TABLE IF NOT EXISTS promo_redemptions (
   code TEXT NOT NULL REFERENCES promo_codes(code),
   user_id BIGINT NOT NULL REFERENCES users(telegram_id),
   order_id UUID NOT NULL UNIQUE REFERENCES orders(order_id),
-  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(code, user_id)
+  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Allow the same user to redeem a code again after an admin reactivates it.
+ALTER TABLE promo_redemptions DROP CONSTRAINT IF EXISTS promo_redemptions_code_user_id_key;
+
+-- Support conversation messages; additive migration preserves existing tickets.
+CREATE TABLE IF NOT EXISTS support_messages (
+  id BIGSERIAL PRIMARY KEY,
+  ticket_id BIGINT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  sender_id BIGINT NOT NULL,
+  sender_role TEXT NOT NULL CHECK (sender_role IN ('user','admin')),
+  message_text TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS support_messages_ticket_idx ON support_messages(ticket_id,id);
 
 
 -- Wallet, manual deposits and one-time digital inventory for the Swiggy Swagger bot.
