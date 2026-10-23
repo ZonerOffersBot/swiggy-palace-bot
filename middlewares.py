@@ -90,7 +90,7 @@ class ForceJoinMiddleware(BaseMiddleware):
         text = "🔒 Bot use karne ke liye pehle required channel(s) join karein."
         if has_verification_error:
             text += (
-                "\\n\\n⚠️ Channel membership verify nahi ho pa rahi. "
+                "\n\n⚠️ Channel membership verify nahi ho pa rahi. "
                 "Bot ko channel mein admin banayein aur Admin Panel mein saved "
                 "channel ID / @username check karein, phir Verify dabayein."
             )
