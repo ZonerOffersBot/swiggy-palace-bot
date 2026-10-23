@@ -100,7 +100,7 @@ async def help_start(cb: CallbackQuery):
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer(
-        "🆘 <b>Support Centre</b>\\nExisting ticket kholkar conversation continue karein, ya naya ticket banayein.",
+        "🆘 <b>Support Centre</b>\nExisting ticket kholkar conversation continue karein, ya naya ticket banayein.",
         reply_markup=kb.as_markup(),
     )
 
@@ -130,13 +130,13 @@ async def support_open(cb: CallbackQuery, state: FSMContext):
         "SELECT sender_role,message_text,created_at FROM support_messages WHERE ticket_id=$1 ORDER BY id ASC LIMIT 50",
         ticket_id,
     )
-    text = f"🆘 <b>Support #{ticket_id}</b> — {ticket['status']}\\n\\n"
+    text = f"🆘 <b>Support #{ticket_id}</b> — {ticket['status']}\n\n"
     if not messages:
-        text += f"👤 You: {ticket['query']}\\n"
+        text += f"👤 You: {ticket['query']}\n"
     else:
         for row in messages[-20:]:
             who = "👤 You" if row["sender_role"] == "user" else "🛠 Admin"
-            text += f"{who}: {row['message_text'][:700]}\\n\\n"
+            text += f"{who}: {row['message_text'][:700]}\n\n"
     kb = InlineKeyboardBuilder()
     if ticket["status"] == "open":
         kb.button(text="✍️ Reply to Admin", callback_data=f"support:reply:{ticket_id}")
@@ -171,12 +171,12 @@ async def support_reply_start(cb: CallbackQuery, state: FSMContext):
 @router.message(SupportFSM.waiting_message, F.text)
 async def support_user_message(msg: Message, state: FSMContext, bot: Bot):
     body = (msg.text or "").strip()
+    if not body:
+        await msg.answer("Message text bhejein.")
+        return
     if body.split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
         await state.clear()
         await msg.answer("Reply cancel ho gaya. Support Centre kholne ke liye /start dabayein.")
-        return
-    if not body:
-        await msg.answer("Message text bhejein.")
         return
     data = await state.get_data()
     ticket_id = data.get("support_ticket_id")
@@ -207,9 +207,9 @@ async def support_user_message(msg: Message, state: FSMContext, bot: Bot):
         try:
             await bot.send_message(
                 admin_id,
-                f"📩 <b>Support #{ticket_id} — New user message</b>\\n"
-                f"👤 {user.full_name} (@{user.username or '—'})\\n"
-                f"🆔 <code>{user.id}</code>\\n\\n{body}",
+                f"📩 <b>Support #{ticket_id} — New user message</b>\n"
+                f"👤 {user.full_name} (@{user.username or '—'})\n"
+                f"🆔 <code>{user.id}</code>\n\n{body}",
                 reply_markup=kb.as_markup(),
             )
         except Exception:
