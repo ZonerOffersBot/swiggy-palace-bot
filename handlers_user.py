@@ -16,6 +16,7 @@ router = Router()
 
 class SupportFSM(StatesGroup):
     waiting_query = State()
+    waiting_message = State()
 
 
 async def build_home_kb():
@@ -85,10 +86,138 @@ async def home(cb: CallbackQuery):
 
 
 @router.callback_query(F.data == "menu:help")
-async def help_start(cb: CallbackQuery, state: FSMContext):
+async def help_start(cb: CallbackQuery):
+    rows = await db().fetch(
+        "SELECT id,status,COALESCE(query,message,'') AS query,created_at FROM support_tickets WHERE user_id=$1 ORDER BY created_at DESC LIMIT 10",
+        cb.from_user.id,
+    )
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ New Support Ticket", callback_data="support:new")
+    for row in rows:
+        label = f"#{row['id']} — {row['status']} — {row['query'][:22]}"
+        kb.button(text=label, callback_data=f"support:open:{row['id']}")
+    kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    kb.adjust(1)
+    await cb.answer()
+    await cb.message.answer(
+        "🆘 <b>Support Centre</b>\\nExisting ticket kholkar conversation continue karein, ya naya ticket banayein.",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@router.callback_query(F.data == "support:new")
+async def support_new(cb: CallbackQuery, state: FSMContext):
     await state.set_state(SupportFSM.waiting_query)
     await cb.answer()
-    await cb.message.answer("🆘 Apni query likhein (max 500 chars). Cancel: /cancel")
+    await cb.message.answer("🆘 Apni query bhejein (max 500 chars). Admin isi ticket mein reply karega. Cancel: /cancel")
+
+
+@router.callback_query(F.data.startswith("support:open:"))
+async def support_open(cb: CallbackQuery, state: FSMContext):
+    try:
+        ticket_id = int(cb.data.rsplit(":", 1)[1])
+    except (ValueError, AttributeError):
+        await cb.answer("Invalid ticket.", show_alert=True)
+        return
+    ticket = await db().fetchrow(
+        "SELECT id,status,COALESCE(query,message,'') AS query FROM support_tickets WHERE id=$1 AND user_id=$2",
+        ticket_id, cb.from_user.id,
+    )
+    if not ticket:
+        await cb.answer("Ticket nahi mila.", show_alert=True)
+        return
+    messages = await db().fetch(
+        "SELECT sender_role,message_text,created_at FROM support_messages WHERE ticket_id=$1 ORDER BY id ASC LIMIT 50",
+        ticket_id,
+    )
+    text = f"🆘 <b>Support #{ticket_id}</b> — {ticket['status']}\\n\\n"
+    if not messages:
+        text += f"👤 You: {ticket['query']}\\n"
+    else:
+        for row in messages[-20:]:
+            who = "👤 You" if row["sender_role"] == "user" else "🛠 Admin"
+            text += f"{who}: {row['message_text'][:700]}\\n\\n"
+    kb = InlineKeyboardBuilder()
+    if ticket["status"] == "open":
+        kb.button(text="✍️ Reply to Admin", callback_data=f"support:reply:{ticket_id}")
+    kb.button(text="🔄 Refresh Conversation", callback_data=f"support:open:{ticket_id}")
+    kb.button(text="⬅️ Support Centre", callback_data="menu:help")
+    kb.adjust(1)
+    await state.clear()
+    await cb.answer()
+    await cb.message.answer(text[:3900], reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("support:reply:"))
+async def support_reply_start(cb: CallbackQuery, state: FSMContext):
+    try:
+        ticket_id = int(cb.data.rsplit(":", 1)[1])
+    except (ValueError, AttributeError):
+        await cb.answer("Invalid ticket.", show_alert=True)
+        return
+    exists = await db().fetchval(
+        "SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id=$1 AND user_id=$2 AND status='open')",
+        ticket_id, cb.from_user.id,
+    )
+    if not exists:
+        await cb.answer("Ticket open nahi hai.", show_alert=True)
+        return
+    await state.set_state(SupportFSM.waiting_message)
+    await state.update_data(support_ticket_id=ticket_id)
+    await cb.answer()
+    await cb.message.answer(f"Support #{ticket_id} mein apna message bhejein. Cancel: /cancel")
+
+
+@router.message(SupportFSM.waiting_message, F.text)
+async def support_user_message(msg: Message, state: FSMContext, bot: Bot):
+    body = (msg.text or "").strip()
+    if body.split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
+        await state.clear()
+        await msg.answer("Reply cancel ho gaya. Support Centre kholne ke liye /start dabayein.")
+        return
+    if not body:
+        await msg.answer("Message text bhejein.")
+        return
+    data = await state.get_data()
+    ticket_id = data.get("support_ticket_id")
+    ticket = await db().fetchrow(
+        "SELECT id,status FROM support_tickets WHERE id=$1 AND user_id=$2",
+        ticket_id, msg.from_user.id,
+    )
+    if not ticket or ticket["status"] != "open":
+        await state.clear()
+        await msg.answer("Yeh support ticket ab open nahi hai.")
+        return
+    body = body[:2000]
+    await db().execute(
+        "INSERT INTO support_messages(ticket_id,sender_id,sender_role,message_text) VALUES($1,$2,'user',$3)",
+        ticket_id, msg.from_user.id, body,
+    )
+    await db().execute(
+        "UPDATE support_tickets SET message=$1,query=$1 WHERE id=$2",
+        body, ticket_id,
+    )
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✍️ Reply", callback_data=f"sup:reply:{ticket_id}")
+    kb.button(text="📂 Open Conversation", callback_data=f"sup:view:{ticket_id}")
+    kb.button(text="🔒 Close", callback_data=f"sup:close:{ticket_id}")
+    kb.adjust(1)
+    user = msg.from_user
+    for admin_id in await get_all_admin_ids():
+        try:
+            await bot.send_message(
+                admin_id,
+                f"📩 <b>Support #{ticket_id} — New user message</b>\\n"
+                f"👤 {user.full_name} (@{user.username or '—'})\\n"
+                f"🆔 <code>{user.id}</code>\\n\\n{body}",
+                reply_markup=kb.as_markup(),
+            )
+        except Exception:
+            log.exception("Could not notify admin %s about support message %s", admin_id, ticket_id)
+    await msg.answer(
+        f"✅ Message Support #{ticket_id} mein bhej diya. Admin ka reply isi conversation mein milega.",
+        reply_markup=InlineKeyboardBuilder().button(text="📂 Open Conversation", callback_data=f"support:open:{ticket_id}").as_markup(),
+    )
 
 
 @router.message(SupportFSM.waiting_query, F.text)
@@ -103,13 +232,22 @@ async def support_submit(msg: Message, state: FSMContext, bot: Bot):
            VALUES($1,$2,$3,$4,$4) RETURNING id""",
         user.id, user.username, user.full_name, text,
     )
+    await db().execute(
+        "INSERT INTO support_messages(ticket_id,sender_id,sender_role,message_text) VALUES($1,$2,'user',$3)",
+        tid, user.id, text,
+    )
     await state.clear()
+    user_kb = InlineKeyboardBuilder()
+    user_kb.button(text="📂 Open Conversation", callback_data=f"support:open:{tid}")
+    user_kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    user_kb.adjust(1)
     await msg.answer(
-        f"✅ Query #{tid} admin ko bhej di. Reply jald milega.",
-        reply_markup=await build_home_kb(),
+        f"✅ Support ticket #{tid} create ho gaya. Admin ka reply isi conversation mein milega.",
+        reply_markup=user_kb.as_markup(),
     )
     kb = InlineKeyboardBuilder()
     kb.button(text="✍️ Reply", callback_data=f"sup:reply:{tid}")
+    kb.button(text="📂 Open Conversation", callback_data=f"sup:view:{tid}")
     kb.button(text="🔒 Close", callback_data=f"sup:close:{tid}")
     kb.adjust(1)
     username = f"@{user.username}" if user.username else "(no username)"
