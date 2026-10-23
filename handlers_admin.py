@@ -372,10 +372,24 @@ async def toggle_promo(cb: CallbackQuery):
         return
     action, code = cb.data.rsplit(":", 1)
     active = action == "admin:enable_promo"
-    updated = await db().fetchval(
-        "UPDATE promo_codes SET is_active=$1 WHERE code=$2 RETURNING code",
-        active, code
-    )
+    if active:
+        # Reactivation starts a fresh usage cycle while preserving old redemption history.
+        updated = await db().fetchval(
+            """UPDATE promo_codes
+               SET is_active=TRUE, uses_count=0, activation_cycle=activation_cycle+1
+               WHERE code=$1 AND is_active=FALSE RETURNING code""",
+            code,
+        )
+        if not updated:
+            updated = await db().fetchval(
+                "UPDATE promo_codes SET is_active=TRUE WHERE code=$1 RETURNING code",
+                code,
+            )
+    else:
+        updated = await db().fetchval(
+            "UPDATE promo_codes SET is_active=FALSE WHERE code=$1 RETURNING code",
+            code,
+        )
     if not updated:
         await cb.answer("Promo code nahi mila.", show_alert=True)
         return
