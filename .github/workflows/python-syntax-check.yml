@@ -1,0 +1,20 @@
+name: Python syntax validation
+
+on:
+  push:
+    branches:
+      - ticket-bot-rewrite-2026-10-22
+  pull_request:
+    branches:
+      - ticket-bot-rewrite-2026-10-22
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile all Python modules
+        run: python -m compileall -q .
