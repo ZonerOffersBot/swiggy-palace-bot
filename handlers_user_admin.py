@@ -263,20 +263,16 @@ async def user_wallet_action_start(cb: CallbackQuery, state: FSMContext):
         await cb.answer("Main Admin only.", show_alert=True)
         return
     parts = cb.data.split(":")
-    if len(parts) != 5:
-        # callback_data format is admin:user_wallet:<action>:<user_id>
-        parts = cb.data.split(":")
+    # Expected callback_data: admin:user_wallet:<action>:<user_id>
+    if len(parts) != 4:
+        await cb.answer("Invalid wallet action.", show_alert=True)
+        return
+    action = parts[2]
     try:
-        action = parts[3]
-        user_id = int(parts[4]) if len(parts) > 4 else int(parts[3])
-    except (ValueError, IndexError):
-        # Expected format has four segments: admin, user_wallet, action, user_id.
-        try:
-            action = parts[2]
-            user_id = int(parts[3])
-        except (ValueError, IndexError):
-            await cb.answer("Invalid wallet action.", show_alert=True)
-            return
+        user_id = int(parts[3])
+    except ValueError:
+        await cb.answer("Invalid user ID.", show_alert=True)
+        return
     if action not in {"add", "deduct", "set"}:
         await cb.answer("Invalid wallet action.", show_alert=True)
         return
