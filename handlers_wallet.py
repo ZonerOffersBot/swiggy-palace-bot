@@ -107,7 +107,7 @@ async def deposit_start(cb: CallbackQuery, state: FSMContext):
 
 
 @router.message(WalletFSM.deposit_amount, F.text)
-async def deposit_amount(msg: Message, state: FSMContext):
+async def deposit_amount(msg: Message, state: FSMContext, bot: Bot):
     raw = (msg.text or "").strip()
     if raw == "/cancel":
         await state.clear()
@@ -166,20 +166,43 @@ async def deposit_submit(msg: Message, state: FSMContext, bot: Bot):
         await state.clear()
         await msg.answer("Deposit cancel ho gaya.")
         return
-    utr = None if raw.upper() == "NO" else raw[:100]
+    # Normalize UTR so spaces, hyphens, and letter case cannot bypass duplicate checks.
+    utr = None if raw.upper() == "NO" else "".join(ch for ch in raw.upper() if ch.isalnum())[:100]
+    if raw.upper() != "NO" and (not utr or len(utr) < 6):
+        await msg.answer("Valid UTR / transaction ID bhejein (kam se kam 6 letters/numbers), ya UTR na ho to NO likhein.")
+        return
     data = await state.get_data()
     await user_wallet_id(msg.from_user)
     try:
         async with db().acquire() as conn:
             async with conn.transaction():
+                if utr:
+                    duplicate = await conn.fetchrow(
+                        """SELECT id,status FROM wallet_deposits
+                           WHERE utr IS NOT NULL
+                             AND upper(regexp_replace(utr, '[^A-Za-z0-9]', '', 'g'))=$1
+                           LIMIT 1""",
+                        utr,
+                    )
+                    if duplicate:
+                        await msg.answer(
+                            "❌ Yeh UTR pehle hi deposit request mein use ho chuka hai "
+                            f"(request #{duplicate['id']}, status: {duplicate['status']}). "
+                            "Har payment ke liye unique UTR bhejein. Agar aapko lagta hai yeh galti hai, admin se contact karein."
+                        )
+                        return
                 dep = await conn.fetchrow(
                     """INSERT INTO wallet_deposits(user_id,amount_paise,utr,proof_file_id,proof_type)
                        VALUES($1,$2,$3,$4,$5) RETURNING id""",
                     msg.from_user.id, data["deposit_amount_paise"], utr, data["proof_file_id"], data["proof_type"]
                 )
-    except Exception:
+    except Exception as exc:
+        # PostgreSQL unique(utr) remains the final guard against simultaneous submissions.
         log.exception("Deposit submission failed for user %s", msg.from_user.id)
-        await msg.answer("Request save nahi hui. UTR pehle submit hua ho sakta hai; admin se contact karein.")
+        if exc.__class__.__name__ == "UniqueViolationError":
+            await msg.answer("❌ Yeh UTR pehle hi use ho chuka hai. Har payment ke liye unique UTR bhejein.")
+        else:
+            await msg.answer("Request database mein save nahi hui. Aapka balance credit nahi hua; thodi der baad retry karein ya admin se contact karein.")
         return
     await state.clear()
     await msg.answer("✅ Deposit request #" + str(dep["id"]) + " admin ko bhej di. Approval ke baad balance update hoga.")
