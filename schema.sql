@@ -148,17 +148,23 @@ CREATE TABLE IF NOT EXISTS promo_codes (
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_by BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  activation_cycle INTEGER NOT NULL DEFAULT 1,
   CHECK (max_uses IS NULL OR max_uses > 0)
 );
+ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS activation_cycle INTEGER NOT NULL DEFAULT 1;
 CREATE TABLE IF NOT EXISTS promo_redemptions (
   id BIGSERIAL PRIMARY KEY,
   code TEXT NOT NULL REFERENCES promo_codes(code),
   user_id BIGINT NOT NULL REFERENCES users(telegram_id),
   order_id UUID NOT NULL UNIQUE REFERENCES orders(order_id),
-  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  activation_cycle INTEGER NOT NULL DEFAULT 1
 );
--- Allow the same user to redeem a code again after an admin reactivates it.
+ALTER TABLE promo_redemptions ADD COLUMN IF NOT EXISTS activation_cycle INTEGER NOT NULL DEFAULT 1;
+-- One redemption per user per activation cycle; reactivation creates a new cycle.
 ALTER TABLE promo_redemptions DROP CONSTRAINT IF EXISTS promo_redemptions_code_user_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS promo_redemptions_user_cycle_idx
+  ON promo_redemptions(code,user_id,activation_cycle);
 
 -- Support conversation messages; additive migration preserves existing tickets.
 CREATE TABLE IF NOT EXISTS support_messages (
