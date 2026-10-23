@@ -475,8 +475,9 @@ async def complete_inventory_purchase(user, qty: int, state: FSMContext, bot: Bo
                 )
                 await conn.execute(
                     """INSERT INTO wallet_transactions(user_id,kind,amount_paise,balance_after_paise,reference,details)
-                       VALUES($1,'purchase',$2,$3,$4,jsonb_build_object('purchase_id',$5,'category_id',$6,'quantity',$7))""",
-                    user.id, -total, new_balance, "purchase:" + str(purchase_id), str(purchase_id), cat_id, qty
+                       VALUES($1,'purchase',$2,$3,$4,$5::jsonb)""",
+                    user.id, -total, new_balance, "purchase:" + str(purchase_id),
+                    json.dumps({"purchase_id": str(purchase_id), "category_id": cat_id, "quantity": qty})
                 )
                 for row in rows:
                     item = await conn.fetchrow(
