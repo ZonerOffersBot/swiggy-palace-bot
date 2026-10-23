@@ -7,7 +7,7 @@ def env_int(name, default):
     except (TypeError, ValueError): return default
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()}
+ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()}\n# Set MAIN_ADMIN_ID in Render to the owner Telegram ID. If omitted, the first ADMIN_IDS value is used.\nMAIN_ADMIN_ID = int(os.getenv("MAIN_ADMIN_ID", next((x.strip() for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()), "0")))
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 PHONEPE_CLIENT_ID = os.getenv("PHONEPE_CLIENT_ID", "").strip()
 PHONEPE_CLIENT_SECRET = os.getenv("PHONEPE_CLIENT_SECRET", "").strip()
