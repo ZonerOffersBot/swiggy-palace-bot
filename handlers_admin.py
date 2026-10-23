@@ -78,7 +78,7 @@ async def admin_navigation(cb: CallbackQuery):
             section_markup = kb.as_markup()
         elif section == "promos":
             rows = await db().fetch("SELECT code,max_uses,uses_count,is_active,created_at FROM promo_codes ORDER BY created_at DESC LIMIT 30")
-            text = "🎁 <b>Free Ticket Promo Codes</b>\\nCode use karne par eligible user ko free ticket milega.\\n" + ("\\n".join(f"• <code>{r['code']}</code> — {r['uses_count']}/{r['max_uses'] if r['max_uses'] is not None else '∞'} used — {'Active' if r['is_active'] else 'Disabled'}" for r in rows) or "Abhi promo code nahi bana.")
+            text = "🎁 <b>Free Ticket Promo Codes</b>\nCode use karne par eligible user ko free ticket milega.\n" + ("\n".join(f"• <code>{r['code']}</code> — {r['uses_count']}/{r['max_uses'] if r['max_uses'] is not None else '∞'} used — {'Active' if r['is_active'] else 'Disabled'}" for r in rows) or "Abhi promo code nahi bana.")
             kb = InlineKeyboardBuilder()
             kb.button(text="➕ Create promo code", callback_data="admin:add_promo")
             for r in rows:
@@ -149,13 +149,13 @@ async def admin_navigation(cb: CallbackQuery):
             rows = await db().fetch(
                 "SELECT id,user_id,COALESCE(full_name,'') AS full_name,COALESCE(query,message,'') AS query,status,created_at FROM support_tickets ORDER BY (status='open') DESC,created_at DESC LIMIT 20"
             )
-            text = "🆘 <b>Recent Support Tickets</b>\\nOpen ticket select karke conversation dekhein aur reply karein.\\n"
+            text = "🆘 <b>Recent Support Tickets</b>\nOpen ticket select karke conversation dekhein aur reply karein.\n"
             kb = InlineKeyboardBuilder()
             for r in rows:
-                text += f"\\n#{r['id']} — {r['full_name'] or r['user_id']} — {r['status']}\\n{r['query'][:120]}\\n"
+                text += f"\n#{r['id']} — {r['full_name'] or r['user_id']} — {r['status']}\n{r['query'][:120]}\n"
                 kb.button(text=f"📂 Open #{r['id']} ({r['status']})", callback_data=f"sup:view:{r['id']}")
             if not rows:
-                text += "\\nAbhi support tickets nahi hain."
+                text += "\nAbhi support tickets nahi hain."
             kb.button(text="⬅️ Admin home", callback_data="admin:home")
             kb.adjust(1)
             section_markup = kb.as_markup()
@@ -260,16 +260,16 @@ async def support_view(cb: CallbackQuery):
         ticket_id,
     )
     text = (
-        f"🆘 <b>Support #{ticket_id}</b> — {ticket['status']}\\n"
-        f"👤 {ticket['full_name'] or 'Unknown'} (@{ticket['username'] or '—'})\\n"
-        f"🆔 <code>{ticket['user_id']}</code>\\n\\n"
+        f"🆘 <b>Support #{ticket_id}</b> — {ticket['status']}\n"
+        f"👤 {ticket['full_name'] or 'Unknown'} (@{ticket['username'] or '—'})\n"
+        f"🆔 <code>{ticket['user_id']}</code>\n\n"
     )
     if not messages:
-        text += f"User: {ticket['query']}\\n"
+        text += f"User: {ticket['query']}\n"
     else:
         for item in messages[-20:]:
             who = "👤 User" if item["sender_role"] == "user" else "🛠 Admin"
-            text += f"{who}: {item['message_text'][:700]}\\n\\n"
+            text += f"{who}: {item['message_text'][:700]}\n\n"
     kb = InlineKeyboardBuilder()
     if ticket["status"] == "open":
         kb.button(text="✍️ Reply to User", callback_data=f"sup:reply:{ticket_id}")
@@ -339,7 +339,7 @@ async def support_reply_send(msg: Message, state: FSMContext, bot: Bot):
         user_kb.button(text="📂 Open Support Conversation", callback_data=f"support:open:{ticket_id}")
         await bot.send_message(
             row["user_id"],
-            f"💬 <b>Support reply #{ticket_id}</b>\\n\\n{reply_text}",
+            f"💬 <b>Support reply #{ticket_id}</b>\n\n{reply_text}",
             reply_markup=user_kb.as_markup(),
         )
     except Exception:
@@ -391,9 +391,9 @@ async def add_promo_start(cb: CallbackQuery, state: FSMContext):
     await state.set_state(AdminEditFSM.add_promo)
     await cb.answer()
     await cb.message.answer(
-        "🎁 Promo code banayein. Format: <code>CODE | max uses</code>\\n"
-        "Example: <code>FREEENTRY | 1</code>\\n"
-        "Max uses mein 1 ya usse zyada number dein. Har user ek code sirf ek baar redeem kar sakta hai.\\n"
+        "🎁 Promo code banayein. Format: <code>CODE | max uses</code>\n"
+        "Example: <code>FREEENTRY | 1</code>\n"
+        "Max uses mein 1 ya usse zyada number dein. Har user ek code sirf ek baar redeem kar sakta hai.\n"
         "Cancel: /cancel"
     )
 
@@ -410,7 +410,7 @@ async def add_promo_save(msg: Message, state: FSMContext):
         return
     parts = [p.strip() for p in raw.split("|")]
     if len(parts) != 2 or not parts[0] or not parts[1].isdigit() or int(parts[1]) < 1:
-        await msg.answer("Format: CODE | max uses\\nExample: FREEENTRY | 1")
+        await msg.answer("Format: CODE | max uses\nExample: FREEENTRY | 1")
         return
     code = parts[0].upper()
     if len(code) > 40 or not all(ch.isalnum() or ch in "_-" for ch in code):
