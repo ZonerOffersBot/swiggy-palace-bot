@@ -1,16 +1,18 @@
 import json
 import logging
 from aiogram import Bot
-from config import ADMIN_IDS
+from config import ADMIN_IDS, MAIN_ADMIN_ID
 from db import db
 log = logging.getLogger(__name__)
 
 async def is_admin(user_id: int) -> bool:
-    if user_id in ADMIN_IDS: return True
+    if user_id in ADMIN_IDS or (MAIN_ADMIN_ID and user_id == MAIN_ADMIN_ID): return True
     return bool(await db().fetchval("SELECT EXISTS(SELECT 1 FROM admins WHERE telegram_id=$1 AND COALESCE(is_active, TRUE)=TRUE)", user_id))
 
 async def notify_admins(bot: Bot, text: str):
     ids = set(ADMIN_IDS)
+    if MAIN_ADMIN_ID:
+        ids.add(MAIN_ADMIN_ID)
     try: ids.update(r["telegram_id"] for r in await db().fetch("SELECT telegram_id FROM admins WHERE COALESCE(is_active, TRUE)=TRUE"))
     except Exception: log.exception("Could not load database admins")
     for uid in ids:
@@ -32,6 +34,8 @@ async def get_setting(key: str, default: str = "") -> str:
 
 async def get_all_admin_ids() -> set[int]:
     ids = set(ADMIN_IDS)
+    if MAIN_ADMIN_ID:
+        ids.add(MAIN_ADMIN_ID)
     try:
         ids.update(int(r["telegram_id"]) for r in await db().fetch("SELECT telegram_id FROM admins"))
     except Exception:
