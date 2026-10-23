@@ -89,9 +89,11 @@ async def admin_navigation(cb: CallbackQuery):
             kb.adjust(1)
             section_markup = kb.as_markup()
         elif section == "files":
-            rows = await db().fetch("SELECT f.id,t.label,f.file_type,f.is_active FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id ORDER BY f.position,f.id LIMIT 30")
-            text = "📁 <b>Ticket Files (latest 30)</b>\n" + ("\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
+            rows = await db().fetch("SELECT f.id,t.label,f.file_type,f.is_active FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id ORDER BY f.position DESC,f.id DESC LIMIT 30")
+            text = "📁 <b>Ticket Files (latest 30)</b>\nHar file ke neeche Delete button hai. Delete karne se pehle confirmation maangi jayegi.\n\n" + ("\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
             kb = InlineKeyboardBuilder()
+            for r in rows:
+                kb.button(text=f"🗑 Delete file #{r['id']}", callback_data=f"admin:delete_file_confirm:{r['id']}")
             tiers = await db().fetch("SELECT id,label FROM ticket_types ORDER BY position,id")
             for r in tiers:
                 kb.button(text=f"➕ Add file: {r['label'][:28]}", callback_data=f"admin:add_file:{r['id']}")
@@ -614,3 +616,60 @@ async def move_user_menu_item(cb: CallbackQuery):
     await cb.answer("Menu order update ho gaya.")
     if cb.message:
         await cb.message.answer("🧭 Menu order update ho gaya. Latest order dekhne ke liye User Menu dobara kholein.", reply_markup=admin_keyboard())
+
+
+@router.callback_query(F.data.startswith("admin:delete_file_confirm:"))
+async def delete_ticket_file_confirm(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    try:
+        file_id = int(cb.data.rsplit(":", 1)[1])
+    except (ValueError, AttributeError):
+        await cb.answer("Invalid file ID.", show_alert=True)
+        return
+    row = await db().fetchrow(
+        "SELECT f.id, t.label, f.file_type FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id WHERE f.id=$1",
+        file_id,
+    )
+    if not row:
+        await cb.answer("Ticket file nahi mili.", show_alert=True)
+        return
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🗑 Yes, permanently delete", callback_data=f"admin:delete_file_do:{file_id}")
+    kb.button(text="❌ Cancel", callback_data="admin:files")
+    kb.adjust(1)
+    await cb.answer()
+    await cb.message.answer(
+        f"⚠️ <b>Confirm file deletion</b>\n\n"
+        f"File: <b>#{row['id']}</b> — {row['label']} ({row['file_type']})\n"
+        "Is action se ticket_files database record permanently delete ho jayega. Existing issued tickets/history delete nahi honge.\n\n"
+        "Kya aap continue karna chahte hain?",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("admin:delete_file_do:"))
+async def delete_ticket_file_do(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    try:
+        file_id = int(cb.data.rsplit(":", 1)[1])
+    except (ValueError, AttributeError):
+        await cb.answer("Invalid file ID.", show_alert=True)
+        return
+    deleted = await db().fetchval(
+        "DELETE FROM ticket_files WHERE id=$1 RETURNING id",
+        file_id,
+    )
+    if not deleted:
+        await cb.answer("File pehle hi delete ho chuki hai.", show_alert=True)
+        return
+    await cb.answer("Ticket file permanently deleted.")
+    if cb.message:
+        await cb.message.edit_text(
+            f"✅ Ticket file #{deleted} permanently delete ho gayi.\n\n"
+            "Baaki files dekhne ke liye Ticket Files dobara kholein.",
+            reply_markup=admin_keyboard(),
+        )
