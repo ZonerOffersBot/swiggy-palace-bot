@@ -289,7 +289,7 @@ async def deposit_review(cb: CallbackQuery, bot: Bot):
                         ledger = await conn.fetchrow(
                             """INSERT INTO wallet_transactions
                                (user_id,kind,amount_paise,balance_after_paise,reference,details)
-                               VALUES($1,'deposit',$2,$3,$4,jsonb_build_object('deposit_id',$5,'reviewed_by',$6,'utr',$7))
+                               VALUES($1,'deposit',$2,$3,$4,jsonb_build_object('deposit_id',$5::bigint,'reviewed_by',$6::bigint,'utr',$7::text))
                                ON CONFLICT(reference) DO NOTHING
                                RETURNING id""",
                             user_id, amount, new_balance, reference, dep_id, cb.from_user.id, dep["utr"],
