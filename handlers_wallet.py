@@ -525,10 +525,67 @@ async def user_purchases(cb: CallbackQuery):
     if not rows:
         await cb.message.answer("Abhi koi purchase history nahi hai.")
         return
-    text = "📦 <b>My Purchases</b>\n"
+    text = "📦 <b>My Purchases</b>\\nPurchase history aur original delivered JSON/text dobara kholne ke liye order button dabayein.\\n"
+    kb = InlineKeyboardBuilder()
     for r in rows:
-        text += "\n• " + r["label"] + " × " + str(r["quantity"]) + " — " + money(r["total_paise"]) + "\n  " + str(r["status"]) + " | " + str(r["created_at"]) + "\n  <code>" + str(r["purchase_id"]) + "</code>\n"
-    await cb.message.answer(text)
+        text += "\\n• " + r["label"] + " × " + str(r["quantity"]) + " — " + money(r["total_paise"]) + "\\n  " + str(r["status"]) + " | " + str(r["created_at"]) + "\\n  <code>" + str(r["purchase_id"]) + "</code>\\n"
+        kb.button(text=f"📂 Open files — {str(r['purchase_id'])[:8]}", callback_data=f"purchase:open:{r['purchase_id']}")
+    kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    kb.adjust(1)
+    await cb.message.answer(text[:3900], reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("purchase:open:"))
+async def purchase_open_files(cb: CallbackQuery, bot: Bot):
+    raw_id = cb.data.rsplit(":", 1)[1]
+    try:
+        purchase_id = uuid.UUID(raw_id)
+    except (ValueError, TypeError):
+        await cb.answer("Purchase ID invalid hai.", show_alert=True)
+        return
+    purchase = await db().fetchrow(
+        """SELECT p.purchase_id,p.status,p.quantity,p.total_paise,c.label
+           FROM inventory_purchases p JOIN inventory_categories c ON c.id=p.category_id
+           WHERE p.purchase_id=$1 AND p.user_id=$2""",
+        purchase_id, cb.from_user.id,
+    )
+    if not purchase:
+        await cb.answer("Purchase nahi mili.", show_alert=True)
+        return
+    items = await db().fetch(
+        """SELECT i.id,i.item_type,i.telegram_file_id,i.file_name,i.caption,i.text_content,
+                  pi.delivered_at
+           FROM inventory_purchase_items pi JOIN digital_inventory i ON i.id=pi.inventory_id
+           WHERE pi.purchase_id=$1 ORDER BY i.id""",
+        purchase_id,
+    )
+    await cb.answer()
+    await cb.message.answer(
+        f"📦 <b>{purchase['label']}</b>\\nOrder: <code>{purchase_id}</code>\\n"
+        f"Status: {purchase['status']} | Quantity: {purchase['quantity']} | Total: {money(purchase['total_paise'])}\\n"
+        "Original purchased content neeche dobara bheja ja raha hai."
+    )
+    if not items:
+        await cb.message.answer("Is purchase ke files linked nahi mile. Admin ko order ID bhejein.")
+        return
+    delivered_all = True
+    for item in items:
+        try:
+            if item["item_type"] == "text":
+                await bot.send_message(cb.from_user.id, item["text_content"] or "")
+            elif item["item_type"] == "photo":
+                await bot.send_photo(cb.from_user.id, item["telegram_file_id"], caption=item["caption"] or None)
+            else:
+                await bot.send_document(
+                    cb.from_user.id,
+                    item["telegram_file_id"],
+                    caption=item["caption"] or None,
+                )
+        except Exception:
+            delivered_all = False
+            log.exception("Purchase history redelivery failed purchase=%s item=%s", purchase_id, item["id"])
+    if not delivered_all:
+        await cb.message.answer("⚠️ Kuch content dobara deliver nahi ho paya. Admin ko order ID ke saath contact karein.")
 
 
 @router.callback_query(F.data == "wallet:history")
