@@ -139,9 +139,12 @@ async def promo_redeem(msg: Message, state: FSMContext, bot: Bot):
             elif promo["max_uses"] is not None and promo["uses_count"] >= promo["max_uses"]:
                 failure = "Is promo code ki use limit khatam ho gayi hai."
             else:
-                used = await conn.fetchval("SELECT EXISTS(SELECT 1 FROM promo_redemptions WHERE code=$1 AND user_id=$2)", code, msg.from_user.id)
+                used = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM promo_redemptions WHERE code=$1 AND user_id=$2 AND activation_cycle=$3)",
+                    code, msg.from_user.id, promo["activation_cycle"]
+                )
                 if used:
-                    failure = "Aap yeh promo code pehle hi use kar chuke hain."
+                    failure = "Aap is activation cycle mein yeh promo code pehle hi use kar chuke hain."
                 else:
                     await conn.execute(
                         """INSERT INTO orders
@@ -149,7 +152,10 @@ async def promo_redeem(msg: Message, state: FSMContext, bot: Bot):
                            VALUES($1,$2,0,'INR','paid','promo',$3,$4,$5,NOW())""",
                         order_id, msg.from_user.id, f"PROMO:{code}:{order_id}", f"promo:{code}:{order_id}", tier_id
                     )
-                    await conn.execute("INSERT INTO promo_redemptions(code,user_id,order_id) VALUES($1,$2,$3)", code, msg.from_user.id, order_id)
+                    await conn.execute(
+                        "INSERT INTO promo_redemptions(code,user_id,order_id,activation_cycle) VALUES($1,$2,$3,$4)",
+                        code, msg.from_user.id, order_id, promo["activation_cycle"]
+                    )
                     await conn.execute("UPDATE promo_codes SET uses_count=uses_count+1 WHERE code=$1", code)
     if failure:
         await msg.answer(f"❌ {failure}\\nCode dobara check karein ya admin se contact karein. /cancel se exit kar sakte hain.")
