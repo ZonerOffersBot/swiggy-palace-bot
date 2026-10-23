@@ -229,17 +229,32 @@ async def deposit_review(cb: CallbackQuery, bot: Bot):
                         if not wallet:
                             raise RuntimeError("Wallet row could not be created")
                         new_balance = int(wallet["balance_paise"]) + amount
-                        await conn.execute(
-                            "UPDATE wallets SET balance_paise=$1,updated_at=NOW() WHERE user_id=$2",
-                            new_balance, user_id,
-                        )
-                        await conn.execute(
+
+                        # Write the unique ledger reference first. If another request
+                        # already wrote it, do not increment the wallet a second time.
+                        ledger = await conn.fetchrow(
                             """INSERT INTO wallet_transactions
                                (user_id,kind,amount_paise,balance_after_paise,reference,details)
                                VALUES($1,'deposit',$2,$3,$4,jsonb_build_object('deposit_id',$5,'reviewed_by',$6,'utr',$7))
-                               ON CONFLICT(reference) DO NOTHING""",
+                               ON CONFLICT(reference) DO NOTHING
+                               RETURNING id""",
                             user_id, amount, new_balance, reference, dep_id, cb.from_user.id, dep["utr"],
                         )
+                        if ledger:
+                            await conn.execute(
+                                "UPDATE wallets SET balance_paise=$1,updated_at=NOW() WHERE user_id=$2",
+                                new_balance, user_id,
+                            )
+                        else:
+                            # Another transaction has already recorded this deposit.
+                            # Treat it as already credited and never add the amount again.
+                            existing_tx = await conn.fetchrow(
+                                "SELECT id FROM wallet_transactions WHERE reference=$1",
+                                reference,
+                            )
+                            if not existing_tx:
+                                raise RuntimeError("Deposit ledger insert conflicted but reference was not found")
+
                         await conn.execute(
                             "UPDATE wallet_deposits SET status='approved',reviewed_by=$1,reviewed_at=NOW() WHERE id=$2 AND status='pending'",
                             cb.from_user.id, dep_id,
