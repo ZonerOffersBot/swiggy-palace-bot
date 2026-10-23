@@ -270,3 +270,22 @@ ON CONFLICT(key) DO NOTHING;
 UPDATE user_menu SET label='💰 Wallet' WHERE key='balance' AND label IN ('💰 My Balance / Add Balance','💰 Wallet');
 UPDATE user_menu SET label='🛒 JSON Shop' WHERE key='buyfiles' AND label IN ('🛒 Buy JSON Files','🛒 JSON Shop');
 UPDATE user_menu SET label='📦 My Purchases' WHERE key='purchases' AND label IN ('📦 My Purchases','My Purchases');
+
+
+-- Main-admin user control: additive tables, preserve all existing balances and history.
+CREATE TABLE IF NOT EXISTS user_blacklist (
+  user_id BIGINT PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  blacklisted_by BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT NOT NULL,
+  action TEXT NOT NULL,
+  target_user_id BIGINT,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS admin_audit_target_idx ON admin_audit_log(target_user_id,created_at DESC);
