@@ -84,6 +84,7 @@ async def admin_navigation(cb: CallbackQuery):
             for r in rows:
                 action = "disable" if r["is_active"] else "enable"
                 kb.button(text=f"{'⏸ Disable' if r['is_active'] else '▶️ Enable'} {r['code'][:20]}", callback_data=f"admin:{action}_promo:{r['code']}")
+                kb.button(text=f"♻️ Reactivate {r['code'][:18]}", callback_data=f"admin:reactivate_promo:{r['code']}")
                 kb.button(text=f"🗑 Delete {r['code'][:18]}", callback_data=f"admin:delete_promo:{r['code']}")
             kb.button(text="⬅️ Admin home", callback_data="admin:home")
             kb.adjust(1)
@@ -460,6 +461,28 @@ async def toggle_promo(cb: CallbackQuery):
     await cb.answer("Promo code enabled." if active else "Promo code disabled.")
     if cb.message:
         await cb.message.answer("Promo code status update ho gaya. Admin → Promo Codes dobara kholkar verify karein.")
+
+
+@router.callback_query(F.data.startswith("admin:reactivate_promo:"))
+async def reactivate_promo(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    code = cb.data.rsplit(":", 1)[1]
+    updated = await db().fetchval(
+        """UPDATE promo_codes
+           SET is_active=TRUE, uses_count=0, activation_cycle=activation_cycle+1
+           WHERE code=$1 RETURNING code""",
+        code,
+    )
+    if not updated:
+        await cb.answer("Promo code nahi mila.", show_alert=True)
+        return
+    await cb.answer("Promo reactivated; usage limit reset ho gayi.")
+    if cb.message:
+        await cb.message.answer(
+            f"♻️ Promo <code>{code}</code> reactivate ho gaya. Usage counter reset hai; purani redemption history preserved hai."
+        )
 
 
 @router.callback_query(F.data.startswith("admin:delete_promo:"))
