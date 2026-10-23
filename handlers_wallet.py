@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from aiogram import Router, F, Bot
@@ -12,6 +13,32 @@ from utils import is_admin, notify_admins
 router = Router()
 log = logging.getLogger(__name__)
 MIN_DEPOSIT = 2500  # paise = ₹25
+DEPOSIT_TIMEOUT_SECONDS = 120
+
+
+async def _expire_deposit_flow(bot: Bot, user_id: int, state: FSMContext, token: str):
+    """Expire only an unfinished deposit flow; submitted requests remain for manual review."""
+    try:
+        await asyncio.sleep(DEPOSIT_TIMEOUT_SECONDS)
+        data = await state.get_data()
+        current_state = await state.get_state()
+        if data.get("deposit_timeout_token") != token:
+            return
+        if current_state not in {WalletFSM.deposit_proof.state, WalletFSM.deposit_utr.state}:
+            return
+        await state.clear()
+        await bot.send_message(
+            user_id,
+            "⌛ Payment request timeout: 2 minutes mein screenshot aur UTR submit nahi hua, "
+            "isliye deposit flow cancel kar diya gaya. Dobara Add Balance start karein. "
+            "Agar payment already kar di hai, payment proof ke saath admin se contact karein.",
+        )
+    except Exception:
+        log.exception("Deposit timeout handler failed for user %s", user_id)
+
+
+def _schedule_deposit_timeout(bot: Bot, user_id: int, state: FSMContext, token: str):
+    asyncio.create_task(_expire_deposit_flow(bot, user_id, state, token))
 
 
 class WalletFSM(StatesGroup):
@@ -99,16 +126,18 @@ async def deposit_amount(msg: Message, state: FSMContext):
         await state.clear()
         await msg.answer("PhonePe QR abhi set nahi hai. Admin se contact karein.")
         return
-    await state.update_data(deposit_amount_paise=amount)
+    timeout_token = uuid.uuid4().hex
+    await state.update_data(deposit_amount_paise=amount, deposit_timeout_token=timeout_token)
     await state.set_state(WalletFSM.deposit_proof)
     try:
-        await msg.answer_photo(qr, caption="📱 PhonePe QR\nAmount: <b>" + money(amount) + "</b>\nPayment karne ke baad screenshot bhejein. Sirf admin approval ke baad balance add hoga.")
+        await msg.answer_photo(qr, caption="📱 PhonePe QR\nAmount: <b>" + money(amount) + "</b>\nPayment karne ke baad screenshot bhejein. Sirf admin approval ke baad balance add hoga.\n⏳ Screenshot + UTR 2 minutes mein submit karein.")
     except Exception:
         log.exception("Could not send configured PhonePe QR")
         await msg.answer("QR send nahi ho paya. Admin ko QR dobara set karna hoga.")
         await state.clear()
         return
-    await msg.answer("Payment ka screenshot/photo bhejein. Cancel: /cancel")
+    _schedule_deposit_timeout(bot, msg.from_user.id, state, timeout_token)
+    await msg.answer("Payment ka screenshot/photo bhejein, phir UTR bhejein. ⏳ 2-minute timeout active hai. Cancel: /cancel")
 
 
 @router.message(WalletFSM.deposit_proof)
