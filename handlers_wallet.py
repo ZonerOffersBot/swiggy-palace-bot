@@ -177,6 +177,8 @@ async def deposit_submit(msg: Message, state: FSMContext, bot: Bot):
         async with db().acquire() as conn:
             async with conn.transaction():
                 if utr:
+                    # Serialize submissions for the same normalized UTR, including concurrent requests.
+                    await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", utr)
                     duplicate = await conn.fetchrow(
                         """SELECT id,status FROM wallet_deposits
                            WHERE utr IS NOT NULL
@@ -316,13 +318,20 @@ async def deposit_review(cb: CallbackQuery, bot: Bot):
                         "UPDATE wallet_deposits SET status='rejected',reviewed_by=$1,reviewed_at=NOW() WHERE id=$2 AND status='pending'",
                         cb.from_user.id, dep_id,
                     )
-    except Exception:
-        log.exception("Deposit review failed: deposit_id=%s admin_id=%s action=%s", dep_id, cb.from_user.id, action)
-        await cb.answer("Database error: approval save nahi hui. Logs check karein.", show_alert=True)
+    except Exception as exc:
+        # Log full traceback for diagnosis; show only safe error class to admins.
+        log.exception("Deposit review failed: deposit_id=%s admin_id=%s action=%s error_type=%s",
+                      dep_id, cb.from_user.id, action, type(exc).__name__)
+        await cb.answer(
+            "Database error (" + type(exc).__name__ + "): approval save nahi hui. Render logs check karein.",
+            show_alert=True,
+        )
         if cb.message:
             await cb.message.answer(
-                "⚠️ Deposit #" + str(dep_id) + " process nahi hui. Status pending hi rehna chahiye. "
-                "Render logs mein 'Deposit review failed' error check karein."
+                "⚠️ Deposit #" + str(dep_id) + " process nahi hui; balance credit nahi kiya gaya "
+                "jab tak transaction successfully commit na ho.\n"
+                "Error type: <code>" + type(exc).__name__ + "</code>\n"
+                "Render logs mein isi deposit ID ka 'Deposit review failed' traceback dekhein."
             )
         return
 
