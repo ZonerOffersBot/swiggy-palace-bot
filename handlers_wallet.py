@@ -525,10 +525,10 @@ async def user_purchases(cb: CallbackQuery):
     if not rows:
         await cb.message.answer("Abhi koi purchase history nahi hai.")
         return
-    text = "📦 <b>My Purchases</b>\\nPurchase history aur original delivered JSON/text dobara kholne ke liye order button dabayein.\\n"
+    text = "📦 <b>My Purchases</b>\nPurchase history aur original delivered JSON/text dobara kholne ke liye order button dabayein.\n"
     kb = InlineKeyboardBuilder()
     for r in rows:
-        text += "\\n• " + r["label"] + " × " + str(r["quantity"]) + " — " + money(r["total_paise"]) + "\\n  " + str(r["status"]) + " | " + str(r["created_at"]) + "\\n  <code>" + str(r["purchase_id"]) + "</code>\\n"
+        text += "\n• " + r["label"] + " × " + str(r["quantity"]) + " — " + money(r["total_paise"]) + "\n  " + str(r["status"]) + " | " + str(r["created_at"]) + "\n  <code>" + str(r["purchase_id"]) + "</code>\n"
         kb.button(text=f"📂 Open files — {str(r['purchase_id'])[:8]}", callback_data=f"purchase:open:{r['purchase_id']}")
     kb.button(text="⬅️ Main Menu", callback_data="user:home")
     kb.adjust(1)
@@ -561,8 +561,8 @@ async def purchase_open_files(cb: CallbackQuery, bot: Bot):
     )
     await cb.answer()
     await cb.message.answer(
-        f"📦 <b>{purchase['label']}</b>\\nOrder: <code>{purchase_id}</code>\\n"
-        f"Status: {purchase['status']} | Quantity: {purchase['quantity']} | Total: {money(purchase['total_paise'])}\\n"
+        f"📦 <b>{purchase['label']}</b>\nOrder: <code>{purchase_id}</code>\n"
+        f"Status: {purchase['status']} | Quantity: {purchase['quantity']} | Total: {money(purchase['total_paise'])}\n"
         "Original purchased content neeche dobara bheja ja raha hai."
     )
     if not items:
@@ -845,7 +845,7 @@ async def history_start(cb: CallbackQuery, state: FSMContext):
     kb.button(text="⬅️ Wallet Admin", callback_data="admin:wallet_home")
     kb.adjust(1)
     await cb.answer()
-    await cb.message.answer("🧾 <b>Transaction History</b>\\nRecent transactions dekhein ya Telegram ID / username / naam se user find karein.", reply_markup=kb.as_markup())
+    await cb.message.answer("🧾 <b>Transaction History</b>\nRecent transactions dekhein ya Telegram ID / username / naam se user find karein.", reply_markup=kb.as_markup())
 
 
 @router.callback_query(F.data == "admin:wallet_history_find")
