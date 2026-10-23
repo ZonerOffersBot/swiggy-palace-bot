@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 import uuid
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
@@ -289,10 +290,10 @@ async def deposit_review(cb: CallbackQuery, bot: Bot):
                         ledger = await conn.fetchrow(
                             """INSERT INTO wallet_transactions
                                (user_id,kind,amount_paise,balance_after_paise,reference,details)
-                               VALUES($1,'deposit',$2,$3,$4,jsonb_build_object('deposit_id',$5::bigint,'reviewed_by',$6::bigint,'utr',$7::text))
+                               VALUES($1,'deposit',$2,$3,$4,$5::jsonb)
                                ON CONFLICT(reference) DO NOTHING
                                RETURNING id""",
-                            user_id, amount, new_balance, reference, dep_id, cb.from_user.id, dep["utr"],
+                            user_id, amount, new_balance, reference, json.dumps({"deposit_id": dep_id, "reviewed_by": cb.from_user.id, "utr": dep["utr"]}),
                         )
                         if ledger:
                             await conn.execute(
