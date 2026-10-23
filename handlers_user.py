@@ -214,9 +214,11 @@ async def support_user_message(msg: Message, state: FSMContext, bot: Bot):
             )
         except Exception:
             log.exception("Could not notify admin %s about support message %s", admin_id, ticket_id)
+    user_kb = InlineKeyboardBuilder()
+    user_kb.button(text="📂 Open Conversation", callback_data=f"support:open:{ticket_id}")
     await msg.answer(
         f"✅ Message Support #{ticket_id} mein bhej diya. Admin ka reply isi conversation mein milega.",
-        reply_markup=InlineKeyboardBuilder().button(text="📂 Open Conversation", callback_data=f"support:open:{ticket_id}").as_markup(),
+        reply_markup=user_kb.as_markup(),
     )
 
 
