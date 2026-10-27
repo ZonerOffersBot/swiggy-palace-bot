@@ -1,4 +1,4 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 def role_menu():
     return InlineKeyboardMarkup([
@@ -50,3 +50,12 @@ def order_actions(oid, admin=True):
       [InlineKeyboardButton("↩️ Refund",callback_data=f"refund:{oid}")],
       [InlineKeyboardButton("⬅️ Back",callback_data="a_back")]
     ])
+
+
+def user_reply_menu():
+    """Persistent user-facing menu; existing inline callback menus remain unchanged."""
+    return ReplyKeyboardMarkup([
+      ["🛒 Place New Order", "⭐ High Priority"],
+      ["📦 My Orders", "👤 My Profile"],
+      ["🆘 Help & Support", "🏠 Main Menu"]
+    ], resize_keyboard=True, is_persistent=True)
