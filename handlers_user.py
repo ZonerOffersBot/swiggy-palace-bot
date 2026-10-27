@@ -20,13 +20,23 @@ class SupportFSM(StatesGroup):
 
 
 async def build_home_kb():
+    """Build the home UI using existing callbacks only; business handlers stay unchanged."""
     rows = await db().fetch(
         "SELECT key, label FROM user_menu WHERE is_active=TRUE ORDER BY position"
     )
     kb = InlineKeyboardBuilder()
+
+    # Preserve the admin-configurable menu and its existing callback routes.
     for row in rows:
         kb.button(text=row["label"], callback_data=f"menu:{row['key']}")
-    kb.adjust(1)
+
+    # Expose existing wallet/shop features from the home screen.
+    # These callback IDs already have handlers in handlers_wallet.py / handlers_user.py.
+    kb.button(text="🛍️ Buy Coupons", callback_data="menu:buyfiles")
+    kb.button(text="💰 Wallet", callback_data="menu:balance")
+    kb.button(text="📦 My Orders", callback_data="menu:purchases")
+    kb.button(text="🆘 Support", callback_data="menu:help")
+    kb.adjust(2, 2)
     return kb.as_markup()
 
 
@@ -56,9 +66,11 @@ async def start(msg: Message, state: FSMContext):
     lines = [f"• {row['label']} — ₹{row['price_inr'] / 100:.0f} or ⭐ {row['price_stars']}" for row in tiers]
     ticket_text = "\n".join(lines) if lines else "Tickets are not on sale right now. Please check back later."
     await msg.answer(
-        f"{welcome}\n\n🎭 <b>{event}</b>\n📅 {date}\n📍 {venue}"
-        f"\n\n<b>Available tickets</b>\n{ticket_text}"
-        f"\n\nChoose an option below whenever you're ready.",
+        f"✨ <b>{welcome}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🎭 <b>{event}</b>\n📅 {date}\n📍 {venue}"
+        f"\n\n<b>🎟 Available tickets</b>\n{ticket_text}"
+        f"\n\n👇 <b>Choose an option below</b>",
         reply_markup=await build_home_kb(),
     )
 
