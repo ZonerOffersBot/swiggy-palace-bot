@@ -1278,8 +1278,11 @@ async def admin_priority_callback(q,context,data):
 
 async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
+    label=(text or "").strip()
+    if s and label in {"🛒 Place New Order","⭐ High Priority","📦 My Orders","👤 My Profile","🆘 Help & Support","🏠 Main Menu"}:
+        await update.message.reply_text("⚠️ Pehle current step complete karein ya /cancel bhejein, phir menu button use karein.")
+        return
     if not s:
-        label=(text or "").strip()
         if label == "🏠 Main Menu":
             await update.message.reply_text("🏰 <b>SWIGGY PALACE</b> 👑\n\n👇 Choose your role:",parse_mode="HTML",reply_markup=role_menu())
             await update.message.reply_text("👇 Customer panel",reply_markup=user_reply_menu())
