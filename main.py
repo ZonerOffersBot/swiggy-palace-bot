@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from config import BOT_TOKEN, ADMIN_IDS, OWNER_ID, PORT
 import db
-from ui import main_menu, admin_menu, order_actions, role_menu, mini_admin_menu
+from ui import main_menu, admin_menu, order_actions, role_menu, mini_admin_menu, user_reply_menu
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log=logging.getLogger("swiggy-palace")
@@ -272,9 +272,11 @@ async def callbacks(update:Update,context:ContextTypes.DEFAULT_TYPE):
         )
         try:
             await q.message.edit_text(customer_text,parse_mode="HTML",reply_markup=main_menu())
+            await q.message.reply_text("👇 Customer panel — buttons neeche hain.", reply_markup=user_reply_menu())
         except Exception:
             log.exception("Customer menu edit failed uid=%s", uid)
             await q.message.reply_text(customer_text,parse_mode="HTML",reply_markup=main_menu())
+            await q.message.reply_text("👇 Customer panel — buttons neeche hain.", reply_markup=user_reply_menu())
         return
     if data=="become_seller":
         state[uid]={"action":"seller_form","step":0,"data":{}}
@@ -1277,6 +1279,54 @@ async def admin_priority_callback(q,context,data):
 async def text_handler(update:Update,context:ContextTypes.DEFAULT_TYPE):
     u=update.effective_user; uid=u.id; await db.upsert_user(u); s=state.get(uid); text=update.message.text
     if not s:
+        label=(text or "").strip()
+        if label == "🏠 Main Menu":
+            await update.message.reply_text("🏰 <b>SWIGGY PALACE</b> 👑\n\n👇 Choose your role:",parse_mode="HTML",reply_markup=role_menu())
+            await update.message.reply_text("👇 Customer panel",reply_markup=user_reply_menu())
+            return
+        if label == "🛒 Place New Order":
+            active=await db.has_unfinished_order(uid)
+            if active:
+                fee=await db.second_order_fee()
+                if not await db.has_second_order_unlock(uid):
+                    qr,_=await db.payment_qr_for(uid)
+                    msg=(f"🔒 <b>NEW ORDER LOCKED</b>\n\n🆔 Current Order: <code>{active['id']}</code>\n📌 Status: {active['status']}\n\n"
+                         f"Ek active order already hai. 2nd order ke liye pehle <b>Palace Charge ₹{fee:.0f}</b> advance pay karna hoga.\n\n"
+                         "💳 QR par payment karo → UTR bhejo → screenshot bhejo. Payment verify hone ke baad New Order unlock hoga.")
+                    kb=InlineKeyboardMarkup([[InlineKeyboardButton(f"💳 Pay 2nd Order Charge ₹{fee:.0f}",callback_data="second_order_pay")]])
+                    if qr:
+                        try: await update.message.reply_photo(qr,caption=msg,parse_mode="HTML",reply_markup=kb)
+                        except Exception: await update.message.reply_text(msg+f"\n\n🔳 QR: {qr}",parse_mode="HTML",reply_markup=kb)
+                    else: await update.message.reply_text(msg+"\n\n⚠️ QR configured nahi hai.",parse_mode="HTML",reply_markup=kb)
+                else:
+                    await update.message.reply_text(f"⚠️ Aapka ek order already active hai.\n🆔 {active['id']}\n📌 Status: {active['status']}\n\nEk time par sirf ek active order allowed hai.",parse_mode="HTML")
+                return
+            oid=await db.create_order(uid); state[uid]={"action":"address","oid":oid}
+            await update.message.reply_text(f"🛒 <b>{oid}</b> created.\n\n📍 Ab apna <b>Swiggy Address Link</b> bhejo.",parse_mode="HTML")
+            return
+        if label == "⭐ High Priority":
+            await update.message.reply_text("⭐ High Priority option:",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⭐ Continue High Priority",callback_data="priority")]]))
+            return
+        if label == "📦 My Orders":
+            dbx=await db.connect()
+            cur=await dbx.execute("SELECT id,status,total,swiggy_order_id,updated_at FROM orders WHERE customer_id=? ORDER BY created_at DESC LIMIT 10",(uid,))
+            rows=await cur.fetchall(); await dbx.close()
+            if not rows:
+                await update.message.reply_text("📦 <b>My Orders</b>\n\nNo orders yet.",parse_mode="HTML"); return
+            lines=["📦 <b>MY ORDERS</b>",""]; buttons=[]
+            for r in rows:
+                lines.append(f"🆔 <code>{r['id']}</code> • <b>{r['status']}</b> • ₹{float(r['total'] or 0):.0f}\n🧾 Swiggy ID: {r['swiggy_order_id'] or '-'}")
+                buttons.append([InlineKeyboardButton(f"🔄 Check Status — {r['id']}",callback_data=f"orderstatus:{r['id']}")])
+            await update.message.reply_text("\n".join(lines),parse_mode="HTML",reply_markup=InlineKeyboardMarkup(buttons)); return
+        if label == "👤 My Profile":
+            dbx=await db.connect(); cur=await dbx.execute("SELECT * FROM users WHERE id=?",(uid,)); row=await cur.fetchone(); await dbx.close()
+            if not row:
+                await update.message.reply_text("👤 Profile abhi available nahi hai. /start dabayein."); return
+            rating=(row["rating_sum"]/row["rating_count"] if row["rating_count"] else 0)
+            await update.message.reply_text(f"👤 <b>Profile</b>\n⭐ Rating: {rating:.1f}\n⚠️ Warnings: {row['warnings']}\n📦 Orders: My Orders dabayein.",parse_mode="HTML"); return
+        if label == "🆘 Help & Support":
+            state[uid]={"action":"ticket_subject"}
+            await update.message.reply_text("🆘 <b>Help & Support</b>\n\nApni query/problem ek message me likho. Aapki query support ticket ke roop me save hogi.",parse_mode="HTML"); return
         await update.message.reply_text(
             "👋 Swiggy Palace menu use karne ke liye /start dabayein.\n"
             "Agar admin hain to /admin ya /ping use karein."
