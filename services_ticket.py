@@ -77,3 +77,51 @@ async def atomic_create_and_deliver(bot: Bot, order_id):
             claimed["ticket_id"]
         )
         return "delivery_failed"
+
+
+async def deliver_ticket_files_for_order(bot: Bot, order_id):
+    """Deliver only the exact active file/text records attached to this paid/promo ticket tier."""
+    order = await db().fetchrow(
+        "SELECT user_id,ticket_type_id FROM orders WHERE order_id=$1 AND status='paid'",
+        order_id,
+    )
+    if not order or not order["ticket_type_id"]:
+        return
+    files = await db().fetch(
+        """SELECT id,file_type,COALESCE(file_id,telegram_file_id) AS deliver_file_id,
+                  text_content,caption,file_name
+           FROM ticket_files WHERE ticket_type_id=$1 AND is_active=TRUE
+           ORDER BY position,id""",
+        order["ticket_type_id"],
+    )
+    for item in files:
+        claimed = await db().fetchval(
+            """INSERT INTO ticket_file_deliveries(order_id,ticket_file_id,status)
+               VALUES($1,$2,'pending') ON CONFLICT(order_id,ticket_file_id) DO NOTHING
+               RETURNING ticket_file_id""",
+            order_id, item["id"],
+        )
+        if not claimed:
+            status = await db().fetchval(
+                "SELECT status FROM ticket_file_deliveries WHERE order_id=$1 AND ticket_file_id=$2",
+                order_id, item["id"],
+            )
+            if status == "delivered":
+                continue
+        try:
+            if item["file_type"] == "text":
+                await bot.send_message(order["user_id"], item["text_content"] or "")
+            elif item["file_type"] == "photo":
+                await bot.send_photo(order["user_id"], item["deliver_file_id"], caption=item["caption"] or None)
+            else:
+                await bot.send_document(
+                    order["user_id"], item["deliver_file_id"],
+                    caption=item["caption"] or None,
+                )
+            await db().execute(
+                """UPDATE ticket_file_deliveries SET status='delivered',delivered_at=NOW()
+                   WHERE order_id=$1 AND ticket_file_id=$2""",
+                order_id, item["id"],
+            )
+        except Exception:
+            log.exception("Ticket file delivery failed order=%s file=%s", order_id, item["id"])
