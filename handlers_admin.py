@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
@@ -858,6 +859,7 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, bot: Bot):
                 message_id=int(data["source_message_id"]),
             )
             sent += 1
+            await asyncio.sleep(0.05)
         except Exception:
             failed += 1
             log.warning("Broadcast delivery failed for user %s", uid, exc_info=True)
