@@ -226,6 +226,11 @@ INSERT INTO inventory_categories(key,label,price_paise,position,is_active) VALUE
  ('swiggy_claim','Swiggy Claim JSON',10000,2,TRUE),
  ('food_done','Food Done JSON',10000,3,TRUE)
 ON CONFLICT(key) DO NOTHING;
+
+-- Separate Movie Files folder; its items use the existing wallet checkout.
+INSERT INTO inventory_categories(key,label,price_paise,position,is_active)
+VALUES ('movie_files','🎬 Movie Files',10000,4,TRUE)
+ON CONFLICT(key) DO NOTHING;
 CREATE TABLE IF NOT EXISTS digital_inventory (
   id BIGSERIAL PRIMARY KEY,
   category_id BIGINT NOT NULL REFERENCES inventory_categories(id),
@@ -311,4 +316,8 @@ CREATE TABLE IF NOT EXISTS ticket_file_deliveries (
 );
 INSERT INTO user_menu(key,label,position,is_active)
 VALUES ('ticketfiles','📁 Buy Ticket Files',7,TRUE)
+ON CONFLICT(key) DO NOTHING;
+
+INSERT INTO user_menu(key,label,position,is_active)
+VALUES ('myticketfiles','📦 My Ticket Files',8,TRUE)
 ON CONFLICT(key) DO NOTHING;
