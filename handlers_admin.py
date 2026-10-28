@@ -792,8 +792,8 @@ async def broadcast_start(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     if cb.message:
         await cb.message.answer(
-            "📣 <b>Broadcast</b>\\n\\nAb woh message bhejein jo sabhi registered users ko bhejna hai. "
-            "Text, photo, video ya document with caption bhej sakte hain.\\n"
+            "📣 <b>Broadcast</b>\n\nAb woh message bhejein jo sabhi registered users ko bhejna hai. "
+            "Text, photo, video ya document with caption bhej sakte hain.\n"
             "Cancel karne ke liye /cancel bhejein."
         )
 
@@ -815,7 +815,7 @@ async def broadcast_receive(msg: Message, state: FSMContext):
     kb.adjust(1)
     count = await db().fetchval("SELECT COUNT(*) FROM users")
     await msg.answer(
-        f"📣 <b>Broadcast confirmation</b>\\nRegistered recipients: <b>{count}</b>\\n"
+        f"📣 <b>Broadcast confirmation</b>\nRegistered recipients: <b>{count}</b>\n"
         "Confirm karne par ye message sabhi registered users ko bheja jayega.",
         reply_markup=kb.as_markup(),
     )
@@ -863,7 +863,7 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, bot: Bot):
         except Exception:
             failed += 1
             log.warning("Broadcast delivery failed for user %s", uid, exc_info=True)
-    summary = f"📣 <b>Broadcast complete</b>\\n✅ Sent: {sent}\\n⚠️ Failed/blocked: {failed}\\n👥 Total: {len(rows)}"
+    summary = f"📣 <b>Broadcast complete</b>\n✅ Sent: {sent}\n⚠️ Failed/blocked: {failed}\n👥 Total: {len(rows)}"
     if status:
         await status.edit_text(summary, reply_markup=admin_keyboard())
     await log_audit(cb.from_user.id, "broadcast", {"total": len(rows), "sent": sent, "failed": failed})
