@@ -289,3 +289,26 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS admin_audit_target_idx ON admin_audit_log(target_user_id,created_at DESC);
+
+
+-- Secure ticket-file store: wallet purchases and delivery audit (additive migration).
+ALTER TABLE ticket_files ADD COLUMN IF NOT EXISTS price_paise BIGINT NOT NULL DEFAULT 10000 CHECK (price_paise >= 0);
+CREATE TABLE IF NOT EXISTS ticket_file_purchases (
+  purchase_id UUID PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(telegram_id),
+  ticket_file_id BIGINT NOT NULL REFERENCES ticket_files(id),
+  price_paise BIGINT NOT NULL CHECK (price_paise >= 0),
+  status TEXT NOT NULL DEFAULT 'paid' CHECK (status IN ('paid','delivery_pending','delivered')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  delivered_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS ticket_file_deliveries (
+  order_id UUID NOT NULL REFERENCES orders(order_id),
+  ticket_file_id BIGINT NOT NULL REFERENCES ticket_files(id),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivered')),
+  delivered_at TIMESTAMPTZ,
+  PRIMARY KEY(order_id,ticket_file_id)
+);
+INSERT INTO user_menu(key,label,position,is_active)
+VALUES ('ticketfiles','📁 Buy Ticket Files',7,TRUE)
+ON CONFLICT(key) DO NOTHING;
