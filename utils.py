@@ -37,7 +37,7 @@ async def get_all_admin_ids() -> set[int]:
     if MAIN_ADMIN_ID:
         ids.add(MAIN_ADMIN_ID)
     try:
-        ids.update(int(r["telegram_id"]) for r in await db().fetch("SELECT telegram_id FROM admins"))
+        ids.update(int(r["telegram_id"]) for r in await db().fetch("SELECT telegram_id FROM admins WHERE COALESCE(is_active, TRUE)=TRUE"))
     except Exception:
         log.exception("Could not load admin IDs")
     return ids
