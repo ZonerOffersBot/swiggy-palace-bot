@@ -19,7 +19,7 @@ def admin_keyboard():
         ("📁 Ticket Files", "admin:files"), ("💰 Wallet", "admin:wallet_home"),
         ("🛒 JSON Shop Files", "admin:wallet_inventory"), ("🧾 Transaction History", "admin:wallet_history"), ("⚙️ Settings", "admin:settings"),
         ("🧭 User Menu", "admin:menu"), ("📢 Force Join", "admin:force"),
-        ("👥 User & Wallet Control", "admin:users"), ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
+        ("👥 User & Wallet Control", "admin:users"), ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),\n        ("📣 Broadcast", "admin:broadcast"),
         ("🔄 Refresh", "admin:home"),
     ]
     for label, data in buttons:
@@ -775,3 +775,93 @@ async def delete_ticket_file_do(cb: CallbackQuery):
             "Baaki files dekhne ke liye Ticket Files dobara kholein.",
             reply_markup=admin_keyboard(),
         )
+
+
+class BroadcastFSM(StatesGroup):
+    content = State()
+    confirm = State()
+
+
+@router.callback_query(F.data == "admin:broadcast")
+async def broadcast_start(cb: CallbackQuery, state: FSMContext):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    await state.set_state(BroadcastFSM.content)
+    await cb.answer()
+    if cb.message:
+        await cb.message.answer(
+            "📣 <b>Broadcast</b>\\n\\nAb woh message bhejein jo sabhi registered users ko bhejna hai. "
+            "Text, photo, video ya document with caption bhej sakte hain.\\n"
+            "Cancel karne ke liye /cancel bhejein."
+        )
+
+
+@router.message(BroadcastFSM.content)
+async def broadcast_receive(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        await state.clear()
+        return
+    if (msg.text or "").strip() == "/cancel":
+        await state.clear()
+        await msg.answer("❌ Broadcast cancel ho gaya.", reply_markup=admin_keyboard())
+        return
+    await state.update_data(source_chat_id=msg.chat.id, source_message_id=msg.message_id)
+    await state.set_state(BroadcastFSM.confirm)
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Send to all users", callback_data="admin:broadcast_send")
+    kb.button(text="❌ Cancel", callback_data="admin:broadcast_cancel")
+    kb.adjust(1)
+    count = await db().fetchval("SELECT COUNT(*) FROM users")
+    await msg.answer(
+        f"📣 <b>Broadcast confirmation</b>\\nRegistered recipients: <b>{count}</b>\\n"
+        "Confirm karne par ye message sabhi registered users ko bheja jayega.",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@router.callback_query(F.data == "admin:broadcast_cancel")
+async def broadcast_cancel(cb: CallbackQuery, state: FSMContext):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    await state.clear()
+    await cb.answer("Broadcast cancelled.")
+    if cb.message:
+        await cb.message.answer("Broadcast cancel ho gaya.", reply_markup=admin_keyboard())
+
+
+@router.callback_query(F.data == "admin:broadcast_send")
+async def broadcast_send(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    data = await state.get_data()
+    if not data.get("source_chat_id") or not data.get("source_message_id"):
+        await state.clear()
+        await cb.answer("Broadcast content nahi mila. Dobara try karein.", show_alert=True)
+        return
+    await state.clear()
+    await cb.answer("Broadcast started.")
+    rows = await db().fetch("SELECT telegram_id FROM users ORDER BY telegram_id")
+    sent = failed = 0
+    if cb.message:
+        status = await cb.message.answer(f"⏳ Broadcast shuru: {len(rows)} users.")
+    else:
+        status = None
+    for row in rows:
+        uid = int(row["telegram_id"])
+        try:
+            await bot.copy_message(
+                chat_id=uid,
+                from_chat_id=int(data["source_chat_id"]),
+                message_id=int(data["source_message_id"]),
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+            log.warning("Broadcast delivery failed for user %s", uid, exc_info=True)
+    summary = f"📣 <b>Broadcast complete</b>\\n✅ Sent: {sent}\\n⚠️ Failed/blocked: {failed}\\n👥 Total: {len(rows)}"
+    if status:
+        await status.edit_text(summary, reply_markup=admin_keyboard())
+    await log_audit(cb.from_user.id, "broadcast", {"total": len(rows), "sent": sent, "failed": failed})
