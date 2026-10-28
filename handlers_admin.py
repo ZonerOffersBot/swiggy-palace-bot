@@ -694,7 +694,7 @@ async def add_file_save(msg:Message,state:FSMContext,bot:Bot):
     else:
         await msg.answer("Document, photo ya text bhejein."); return
     await db().execute("INSERT INTO ticket_files(ticket_type_id,file_type,telegram_file_id,file_id,text_content,is_active,added_by,file_name,mime_type,file_size,caption) VALUES($1,$2,$3,$3,$4,TRUE,$5,$6,$7,$8,$9)",tier_id,file_type,file_id,text_content,msg.from_user.id,file_name,mime,size,caption)
-    await state.clear(); await msg.answer("✅ File/content save ho gaya. Note: delivery flow mein ise use karne ka support alag se verify karna hoga.")
+    await state.clear(); await msg.answer("✅ Uploaded content save ho gaya. User ise Ticket Files Shop se wallet balance use karke kharid sakta hai. Default price ₹100 hai; Admin → Ticket Files mein Set price se badal sakte hain.")
 
 
 @router.callback_query(F.data.startswith(("admin:menu_move_up:", "admin:menu_move_down:")))
