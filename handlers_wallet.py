@@ -706,7 +706,7 @@ async def inventory_add_start(cb: CallbackQuery, state: FSMContext):
     await state.set_state(WalletFSM.inventory_add)
     await state.update_data(inventory_category_id=cat_id)
     await cb.answer()
-    await cb.message.answer("📁 " + cat["label"] + "\nHar JSON document ya text item alag message mein bhejein. Multiple files bhej sakte hain; har file alag inventory item banegi. Sirf authorized dummy/test JSON files add karein.\nDone: /done | Cancel: /cancel")
+    await cb.message.answer("📁 " + cat["label"] + "\nHar upload alag item banega. Movie Files folder mein documents, photos aur text allowed hain.\nDone: /done | Cancel: /cancel")
 
 
 @router.message(WalletFSM.inventory_add)
@@ -725,18 +725,23 @@ async def inventory_add_save(msg: Message, state: FSMContext):
         return
     data = await state.get_data()
     cat_id = int(data["inventory_category_id"])
+    cat = await db().fetchrow("SELECT key,label FROM inventory_categories WHERE id=$1", cat_id)
+    is_movie_folder = bool(cat and cat["key"] == "movie_files")
     if msg.document:
-        name = msg.document.file_name or "file.json"
-        if not name.lower().endswith(".json"):
-            await msg.answer("Sirf .json documents accept hote hain. File ko .json extension ke saath upload karein.")
+        name = msg.document.file_name or ("movie-file" if is_movie_folder else "file.json")
+        if not is_movie_folder and not name.lower().endswith(".json"):
+            await msg.answer("Is folder mein sirf .json documents accept hote hain.")
             return
         item_type, file_id, text_content = "document", msg.document.file_id, None
         mime, size, caption = msg.document.mime_type, msg.document.file_size, msg.caption
+    elif msg.photo and is_movie_folder:
+        item_type, file_id, text_content = "photo", msg.photo[-1].file_id, None
+        name, mime, size, caption = None, "image/jpeg", msg.photo[-1].file_size, msg.caption
     elif msg.text and raw:
         item_type, file_id, text_content = "text", None, raw[:4000]
-        name, mime, size, caption = None, "application/json", None, None
+        name, mime, size, caption = None, ("text/plain" if is_movie_folder else "application/json"), None, None
     else:
-        await msg.answer("JSON document ya dummy/test JSON text bhejein. /done jab finish ho.")
+        await msg.answer("JSON document/text bhejein; Movie Files folder mein document, photo ya text bhi bhej sakte hain. /done jab finish ho.")
         return
     try:
         await db().execute(
