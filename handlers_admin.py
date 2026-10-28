@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from config import EVENT_NAME
 from db import db
-from utils import is_admin
+from utils import is_admin, log_audit
 log = logging.getLogger(__name__)
 router=Router()
 
