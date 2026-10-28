@@ -939,3 +939,162 @@ async def category_name_save(msg: Message, state: FSMContext):
     await db().execute("UPDATE inventory_categories SET label=$1,updated_at=NOW() WHERE id=$2", label, data["category_name_id"])
     await state.clear()
     await msg.answer("✅ JSON Shop category name update ho gaya: " + label)
+
+
+@router.callback_query(F.data == "menu:ticketfiles")
+async def ticket_files_shop(cb: CallbackQuery):
+    rows = await db().fetch(
+        """SELECT id,file_type,COALESCE(file_name,'Saved content') AS title,price_paise
+           FROM ticket_files WHERE is_active=TRUE ORDER BY position,id DESC LIMIT 50"""
+    )
+    await cb.answer()
+    if not rows:
+        await cb.message.answer("📁 Abhi Ticket Files mein koi content available nahi hai.")
+        return
+    kb = InlineKeyboardBuilder()
+    text = "📁 <b>Ticket Files Shop</b>\nHar item purchase karne par wahi uploaded file/text milega.\n"
+    for row in rows:
+        text += f"\n• #{row['id']} — {row['title'][:45]} ({row['file_type']}) — {money(row['price_paise'])}"
+        kb.button(text=f"🛒 Buy #{row['id']} — {money(row['price_paise'])}", callback_data=f"ticketfile:buy:{row['id']}")
+    kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    kb.adjust(1)
+    await cb.message.answer(text[:3900], reply_markup=kb.as_markup())
+
+
+async def _deliver_ticket_file_purchase(bot: Bot, user_id: int, purchase_id):
+    purchase = await db().fetchrow(
+        """SELECT p.ticket_file_id,p.status,f.file_type,
+                  COALESCE(f.file_id,f.telegram_file_id) AS file_id,
+                  f.text_content,f.caption,COALESCE(f.file_name,'uploaded-file') AS file_name
+           FROM ticket_file_purchases p JOIN ticket_files f ON f.id=p.ticket_file_id
+           WHERE p.purchase_id=$1 AND p.user_id=$2""",
+        purchase_id, user_id,
+    )
+    if not purchase:
+        return False
+    try:
+        if purchase["file_type"] == "text":
+            await bot.send_message(user_id, purchase["text_content"] or "")
+        elif purchase["file_type"] == "photo":
+            await bot.send_photo(user_id, purchase["file_id"], caption=purchase["caption"] or None)
+        else:
+            await bot.send_document(user_id, purchase["file_id"], caption=purchase["caption"] or None)
+        await db().execute(
+            "UPDATE ticket_file_purchases SET status='delivered',delivered_at=NOW() WHERE purchase_id=$1",
+            purchase_id,
+        )
+        return True
+    except Exception:
+        log.exception("Ticket-file delivery failed purchase=%s user=%s", purchase_id, user_id)
+        await db().execute(
+            "UPDATE ticket_file_purchases SET status='delivery_pending' WHERE purchase_id=$1",
+            purchase_id,
+        )
+        return False
+
+
+@router.callback_query(F.data.startswith("ticketfile:buy:"))
+async def ticket_file_buy(cb: CallbackQuery, bot: Bot):
+    try:
+        file_id = int(cb.data.rsplit(":", 1)[1])
+    except (ValueError, TypeError):
+        await cb.answer("File ID invalid hai.", show_alert=True)
+        return
+    await user_wallet_id(cb.from_user)
+    purchase_id = None
+    error = None
+    existing = await db().fetchrow(
+        """SELECT purchase_id,status FROM ticket_file_purchases
+           WHERE user_id=$1 AND ticket_file_id=$2 ORDER BY created_at DESC LIMIT 1""",
+        cb.from_user.id, file_id,
+    )
+    if existing:
+        purchase_id = existing["purchase_id"]
+        await cb.answer("Aapki existing purchase mil gayi.")
+        ok = await _deliver_ticket_file_purchase(bot, cb.from_user.id, purchase_id)
+        await cb.message.answer("✅ Aapki saved file dobara bhej di." if ok else "⚠️ Delivery pending hai. My Ticket Files se retry karein.")
+        return
+    async with db().acquire() as conn:
+        async with conn.transaction():
+            item = await conn.fetchrow(
+                "SELECT id,file_type,price_paise FROM ticket_files WHERE id=$1 AND is_active=TRUE FOR UPDATE", file_id
+            )
+            wallet = await conn.fetchrow("SELECT balance_paise FROM wallets WHERE user_id=$1 FOR UPDATE", cb.from_user.id)
+            if not item:
+                error = "Yeh file ab available nahi hai."
+            elif not wallet or wallet["balance_paise"] < item["price_paise"]:
+                error = "Wallet balance kam hai. Pehle UPI/PhonePe se Add Balance karein. Required: " + money(item["price_paise"])
+            else:
+                new_balance = wallet["balance_paise"] - item["price_paise"]
+                purchase_id = uuid.uuid4()
+                await conn.execute("UPDATE wallets SET balance_paise=$1,updated_at=NOW() WHERE user_id=$2", new_balance, cb.from_user.id)
+                await conn.execute(
+                    """INSERT INTO ticket_file_purchases(purchase_id,user_id,ticket_file_id,price_paise,status)
+                       VALUES($1,$2,$3,$4,'delivery_pending')""",
+                    purchase_id, cb.from_user.id, file_id, item["price_paise"],
+                )
+                await conn.execute(
+                    """INSERT INTO wallet_transactions(user_id,kind,amount_paise,balance_after_paise,reference,details)
+                       VALUES($1,'purchase',$2,$3,$4,$5::jsonb)""",
+                    cb.from_user.id, -item["price_paise"], new_balance, "ticket-file:" + str(purchase_id),
+                    json.dumps({"purchase_id": str(purchase_id), "ticket_file_id": file_id}),
+                )
+    if error:
+        await cb.answer(error, show_alert=True)
+        return
+    await cb.answer("Payment successful.")
+    ok = await _deliver_ticket_file_purchase(bot, cb.from_user.id, purchase_id)
+    await cb.message.answer(
+        ("✅ <b>Purchase successful!</b> Wallet se " + money(item["price_paise"]) +
+         " deduct hue. Remaining balance: " + money(new_balance) + "\nPurchase ID: <code>" +
+         str(purchase_id) + "</code>\nUploaded content neeche bheja gaya hai.")
+        if ok else
+        ("✅ Payment successful. Wallet se " + money(item["price_paise"]) +
+         " deduct hue, lekin delivery pending hai. Purchase ID: <code>" +
+         str(purchase_id) + "</code>. Admin/support se contact karein.")
+    )
+    await notify_admins(bot, "📁 Ticket file purchase\nUser: " + str(cb.from_user.id) +
+                        "\nFile ID: " + str(file_id) + "\nAmount: " + money(item["price_paise"]) +
+                        "\nPurchase: " + str(purchase_id))
+
+
+@router.callback_query(F.data == "menu:myticketfiles")
+async def my_ticket_file_purchases(cb: CallbackQuery):
+    rows = await db().fetch(
+        """SELECT p.purchase_id,p.status,p.price_paise,p.created_at,f.id AS file_id,
+                  COALESCE(f.file_name,'Saved content') AS title
+           FROM ticket_file_purchases p JOIN ticket_files f ON f.id=p.ticket_file_id
+           WHERE p.user_id=$1 ORDER BY p.created_at DESC LIMIT 15""",
+        cb.from_user.id,
+    )
+    await cb.answer()
+    if not rows:
+        await cb.message.answer("Abhi Ticket Files purchase history nahi hai.")
+        return
+    kb = InlineKeyboardBuilder()
+    text = "📦 <b>My Ticket Files</b>\n"
+    for row in rows:
+        text += f"\n• {row['title'][:40]} — {money(row['price_paise'])} — {row['status']}\n"
+        kb.button(text=f"📤 Resend #{row['file_id']}", callback_data=f"ticketfile:resend:{row['purchase_id']}")
+    kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    kb.adjust(1)
+    await cb.message.answer(text[:3900], reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("ticketfile:resend:"))
+async def ticket_file_resend(cb: CallbackQuery, bot: Bot):
+    try:
+        purchase_id = uuid.UUID(cb.data.rsplit(":", 1)[1])
+    except (ValueError, TypeError):
+        await cb.answer("Purchase ID invalid hai.", show_alert=True)
+        return
+    owned = await db().fetchval(
+        "SELECT EXISTS(SELECT 1 FROM ticket_file_purchases WHERE purchase_id=$1 AND user_id=$2)",
+        purchase_id, cb.from_user.id,
+    )
+    if not owned:
+        await cb.answer("Purchase nahi mili.", show_alert=True)
+        return
+    await cb.answer()
+    ok = await _deliver_ticket_file_purchase(bot, cb.from_user.id, purchase_id)
+    await cb.message.answer("✅ Uploaded content dobara bhej diya." if ok else "⚠️ Delivery abhi pending hai.")
