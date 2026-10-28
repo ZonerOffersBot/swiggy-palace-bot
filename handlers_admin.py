@@ -92,11 +92,12 @@ async def admin_navigation(cb: CallbackQuery):
             kb.adjust(1)
             section_markup = kb.as_markup()
         elif section == "files":
-            rows = await db().fetch("SELECT f.id,t.label,f.file_type,f.is_active FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id ORDER BY f.position DESC,f.id DESC LIMIT 30")
-            text = "📁 <b>Ticket Files (latest 30)</b>\nHar file ke neeche Delete button hai. Delete karne se pehle confirmation maangi jayegi.\n\n" + ("\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
+            rows = await db().fetch("SELECT f.id,t.label,f.file_type,f.is_active,f.price_paise FROM ticket_files f JOIN ticket_types t ON t.id=f.ticket_type_id ORDER BY f.position DESC,f.id DESC LIMIT 30")
+            text = "📁 <b>Ticket Files (latest 30)</b>\nHar file ke neeche Delete button hai. Delete karne se pehle confirmation maangi jayegi.\n\n" + ("\n".join(f"• #{r['id']} — {r['label']} — {r['file_type']} — ₹{r['price_paise']/100:.2f} — {'Active' if r['is_active'] else 'Inactive'}" for r in rows) or "Abhi koi ticket file add nahi hai.")
             kb = InlineKeyboardBuilder()
             for r in rows:
                 kb.button(text=f"🗑 Delete file #{r['id']}", callback_data=f"admin:delete_file_confirm:{r['id']}")
+                kb.button(text=f"💵 Set price #{r['id']}", callback_data=f"admin:ticket_file_price:{r['id']}")
             tiers = await db().fetch("SELECT id,label FROM ticket_types ORDER BY position,id")
             for r in tiers:
                 kb.button(text=f"➕ Add file: {r['label'][:28]}", callback_data=f"admin:add_file:{r['id']}")
@@ -385,6 +386,7 @@ class AdminEditFSM(StatesGroup):
     add_force = State()
     add_file = State()
     add_promo = State()
+    edit_file_price = State()
 
 
 @router.callback_query(F.data == "admin:add_promo")
@@ -868,3 +870,53 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, bot: Bot):
     if status:
         await status.edit_text(summary, reply_markup=admin_keyboard())
     await log_audit(cb.from_user.id, "broadcast", {"total": len(rows), "sent": sent, "failed": failed})
+
+
+@router.callback_query(F.data.startswith("admin:ticket_file_price:"))
+async def ticket_file_price_start(cb: CallbackQuery, state: FSMContext):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    try:
+        file_id = int(cb.data.rsplit(":", 1)[1])
+    except (ValueError, TypeError):
+        await cb.answer("Invalid file ID.", show_alert=True)
+        return
+    item = await db().fetchrow("SELECT id,price_paise FROM ticket_files WHERE id=$1", file_id)
+    if not item:
+        await cb.answer("File nahi mili.", show_alert=True)
+        return
+    await state.set_state(AdminEditFSM.edit_file_price)
+    await state.update_data(ticket_file_price_id=file_id)
+    await cb.answer()
+    await cb.message.answer(
+        f"💵 File #{file_id} ka naya price ₹ mein bhejein. Current: ₹{item['price_paise']/100:.2f}\n"
+        "Example: 49.00 ya 100. Cancel: /cancel"
+    )
+
+
+@router.message(AdminEditFSM.edit_file_price, F.text)
+async def ticket_file_price_save(msg: Message, state: FSMContext):
+    if not await is_admin(msg.from_user.id):
+        await state.clear()
+        return
+    raw = (msg.text or "").strip()
+    if raw == "/cancel":
+        await state.clear()
+        await msg.answer("Price update cancel.")
+        return
+    try:
+        rupees = float(raw)
+        paise = int(round(rupees * 100))
+        if rupees < 0 or paise < 0 or paise > 100000000:
+            raise ValueError
+    except ValueError:
+        await msg.answer("Valid amount bhejein, jaise 49.00. Cancel: /cancel")
+        return
+    data = await state.get_data()
+    updated = await db().fetchval(
+        "UPDATE ticket_files SET price_paise=$1 WHERE id=$2 AND is_active=TRUE RETURNING id",
+        paise, int(data["ticket_file_price_id"]),
+    )
+    await state.clear()
+    await msg.answer(("✅ File price update ho gaya: ₹" + format(paise / 100, ".2f")) if updated else "File inactive ya missing hai.")
