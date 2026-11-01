@@ -1,7 +1,7 @@
 import logging
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
@@ -33,6 +33,8 @@ async def build_home_kb():
 @router.message(CommandStart())
 async def start(msg: Message, state: FSMContext):
     await state.clear()
+    # Clear any stale persistent reply keyboard left by an older bot version.
+    await msg.answer(" ", reply_markup=ReplyKeyboardRemove())
     user = msg.from_user
     await db().execute(
         """INSERT INTO users(telegram_id, username, first_name, full_name)
