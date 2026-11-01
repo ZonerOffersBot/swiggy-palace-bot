@@ -34,7 +34,7 @@ async def build_home_kb():
 async def start(msg: Message, state: FSMContext):
     await state.clear()
     # Clear any stale persistent reply keyboard left by an older bot version.
-    await msg.answer(" ", reply_markup=ReplyKeyboardRemove())
+    await msg.answer("⌨️ Menu updated.", reply_markup=ReplyKeyboardRemove())
     user = msg.from_user
     await db().execute(
         """INSERT INTO users(telegram_id, username, first_name, full_name)
