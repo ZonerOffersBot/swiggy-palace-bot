@@ -446,11 +446,6 @@ async def complete_inventory_purchase(user, qty: int, state: FSMContext, bot: Bo
         await state.clear()
         await reply("Wallet checkout abhi temporarily disabled hai. Admin se contact karein.")
         return
-    if not await feature_enabled("orders_delivery_delivery_notifications"):
-        # Do not accept a payment if the configured digital delivery path is switched off.
-        await state.clear()
-        await reply("Digital delivery temporarily disabled hai. Admin se contact karein.")
-        return
     data = await state.get_data()
     if not data.get("category_id"):
         await state.clear()
