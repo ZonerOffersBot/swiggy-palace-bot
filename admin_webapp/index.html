@@ -35,6 +35,9 @@
 <button class="btn" style="width:100%;margin:6px 0" onclick="createProduct()">＋ Add digital product</button>
 <div id="products"></div>
 </section>
+<section class="feature-group"><h3>🧾 Recent orders</h3><div id="orderRows" class="sub">Loading…</div></section>
+<section class="feature-group"><h3>👥 Customer directory</h3><input id="customerSearch" placeholder="Search user ID, username or name" style="width:100%;padding:12px;border-radius:10px" oninput="loadCustomers()"><div id="customerRows" class="sub">Loading…</div></section>
+<section class="feature-group"><h3>🆘 Support inbox</h3><div id="supportRows" class="sub">Loading…</div></section>
 <section class="actions"><button class="btn" onclick="refresh()">↻ Refresh Stats</button><button class="btn alt" onclick="openBot()">⚙️ Open Bot Controls</button></section>
 <div class="foot">Protected by Telegram Web App authentication • Digital shop controls</div>
 </main><script>
@@ -66,5 +69,14 @@ async function loadShop(){try{
 function toggleProductInput(){const isText=document.getElementById('prodType').value==='text';document.getElementById('prodText').style.display=isText?'block':'none';document.getElementById('prodFile').style.display=isText?'none':'block'}
 async function createCategory(){try{await api('/admin-app/api/shop/categories',{method:'POST',body:JSON.stringify({key:document.getElementById('catKey').value,label:document.getElementById('catLabel').value,price_paise:Number(document.getElementById('catPrice').value)})});document.getElementById('catKey').value='';document.getElementById('catLabel').value='';await loadShop()}catch(e){showError(e.message)}}
 async function createProduct(){try{const type=document.getElementById('prodType').value;const body={category_id:Number(document.getElementById('prodCategory').value),item_type:type,file_name:document.getElementById('prodName').value,caption:document.getElementById('prodCaption').value};if(type==='text')body.text_content=document.getElementById('prodText').value;else body.telegram_file_id=document.getElementById('prodFile').value;await api('/admin-app/api/shop/products',{method:'POST',body:JSON.stringify(body)});document.getElementById('prodText').value='';document.getElementById('prodFile').value='';await loadShop()}catch(e){showError(e.message)}}
-refresh();loadFeatures();loadShop();toggleProductInput();setInterval(refresh,60000);setInterval(loadShop,60000);
+
+async function loadOperations(){try{
+ const [od,sd]=await Promise.all([api('/admin-app/api/shop/orders?limit=20'),api('/admin-app/api/shop/support?limit=20&status=open')]);
+ const o=document.getElementById('orderRows');o.innerHTML='';
+ for(const x of od.orders){const d=document.createElement('div');d.className='feature-row';const a=document.createElement('span');a.textContent=x.order_id.slice(0,8)+' • '+x.status+' • '+x.currency+' '+x.amount;const b=document.createElement('small');b.textContent=x.username?'@'+x.username:String(x.user_id);d.append(a,b);o.appendChild(d)}
+ const s=document.getElementById('supportRows');s.innerHTML='';
+ for(const x of sd.tickets){const d=document.createElement('div');d.className='feature-row';const a=document.createElement('span');a.textContent='#'+x.id+' • '+x.status+' • '+(x.message||'').slice(0,90);const b=document.createElement('small');b.textContent=String(x.user_id);d.append(a,b);s.appendChild(d)}
+ }catch(e){showError(e.message)}}
+async function loadCustomers(){try{const q=encodeURIComponent(document.getElementById('customerSearch').value||'');const d=await api('/admin-app/api/shop/customers?limit=30&q='+q);const root=document.getElementById('customerRows');root.innerHTML='';for(const x of d.customers){const row=document.createElement('div');row.className='feature-row';const a=document.createElement('span');a.textContent=(x.full_name||x.first_name||'Customer')+' • '+(x.username?'@'+x.username:x.telegram_id);const b=document.createElement('small');b.textContent='Orders '+x.order_count+' • Wallet ₹'+(Number(x.wallet_balance_paise)/100).toFixed(2);row.append(a,b);root.appendChild(row)}}catch(e){showError(e.message)}}
+refresh();loadFeatures();loadShop();loadOperations();loadCustomers();toggleProductInput();setInterval(refresh,60000);setInterval(loadShop,60000);setInterval(loadOperations,60000);
 </script></body></html>
