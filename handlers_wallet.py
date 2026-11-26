@@ -10,6 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from db import db
 from utils import is_admin, notify_admins
+from feature_service import feature_enabled
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -362,6 +363,9 @@ async def deposit_review(cb: CallbackQuery, bot: Bot):
 
 @router.callback_query(F.data == "menu:buyfiles")
 async def buy_categories(cb: CallbackQuery):
+    if not await feature_enabled("products_digital_inventory_product_catalogue"):
+        await cb.answer("Digital shop abhi unavailable hai.", show_alert=True)
+        return
     rows = await db().fetch("SELECT id,label,price_paise FROM inventory_categories WHERE is_active=TRUE ORDER BY position,id")
     kb = InlineKeyboardBuilder()
     for row in rows:
@@ -438,6 +442,15 @@ async def purchase_quantity(msg: Message, state: FSMContext, bot: Bot):
 
 
 async def complete_inventory_purchase(user, qty: int, state: FSMContext, bot: Bot, reply):
+    if not await feature_enabled("payments_wallet_wallet_master_switch"):
+        await state.clear()
+        await reply("Wallet checkout abhi temporarily disabled hai. Admin se contact karein.")
+        return
+    if not await feature_enabled("orders_delivery_delivery_notifications"):
+        # Do not accept a payment if the configured digital delivery path is switched off.
+        await state.clear()
+        await reply("Digital delivery temporarily disabled hai. Admin se contact karein.")
+        return
     data = await state.get_data()
     if not data.get("category_id"):
         await state.clear()
@@ -948,6 +961,9 @@ async def category_name_save(msg: Message, state: FSMContext):
 
 @router.callback_query(F.data == "menu:ticketfiles")
 async def ticket_files_shop(cb: CallbackQuery):
+    if not await feature_enabled("products_digital_inventory_product_catalogue"):
+        await cb.answer("Digital shop abhi unavailable hai.", show_alert=True)
+        return
     rows = await db().fetch(
         """SELECT id,file_type,COALESCE(file_name,'Saved content') AS title,price_paise
            FROM ticket_files WHERE is_active=TRUE ORDER BY position,id DESC LIMIT 50"""
