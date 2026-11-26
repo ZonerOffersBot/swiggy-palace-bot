@@ -3,11 +3,10 @@ import hmac
 import json
 import logging
 import time
-from pathlib import Path
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 
 from config import BOT_TOKEN
 from db import db
@@ -17,7 +16,6 @@ from feature_controls import FEATURES, FEATURE_KEYS, MASTER_KEY
 
 log = logging.getLogger(__name__)
 app = FastAPI()
-STATIC_DIR = Path(__file__).parent / "admin_webapp"
 
 def validate_init_data(init_data: str) -> dict:
     if not init_data:
@@ -54,13 +52,6 @@ async def root():
 @app.get("/health")
 async def health():
     return {"ok": True, "service": "swiggy-swagger-bot", "phonepe": "disabled-until-verified"}
-
-@app.get("/admin-app")
-async def admin_app():
-    page = STATIC_DIR / "index.html"
-    if not page.is_file():
-        raise HTTPException(status_code=404, detail="Admin app not installed")
-    return FileResponse(page)
 
 @app.get("/admin-app/api/dashboard")
 async def dashboard(x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data")):
