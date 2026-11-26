@@ -13,20 +13,29 @@ log = logging.getLogger(__name__)
 router=Router()
 
 def admin_keyboard():
+    """Two-column Swagger admin dashboard; all buttons retain existing handlers."""
     kb = InlineKeyboardBuilder()
     buttons = [
-        ("📊 Stats", "admin:stats"), ("🎟 Ticket Types", "admin:tiers"),
+        ("📊 Statistics", "admin:stats"),
+        ("👥 Users & Wallet Control", "admin:users"),
+        ("🎟 Ticket Types", "admin:tiers"),
+        ("📁 Ticket Files", "admin:files"),
+        ("💰 Wallet Management", "admin:wallet_home"),
+        ("🛒 Shop Inventory", "admin:wallet_inventory"),
+        ("🧾 Transaction History", "admin:wallet_history"),
         ("🎁 Promo Codes", "admin:promos"),
-        ("📁 Ticket Files", "admin:files"), ("💰 Wallet", "admin:wallet_home"),
-        ("🛒 JSON Shop Files", "admin:wallet_inventory"), ("🧾 Transaction History", "admin:wallet_history"), ("⚙️ Settings", "admin:settings"),
-        ("🧭 User Menu", "admin:menu"), ("📢 Force Join", "admin:force"),
-        ("👥 User & Wallet Control", "admin:users"), ("👮 Admins", "admin:admins"), ("🆘 Support", "admin:support"),
+        ("📢 Force Join", "admin:force"),
+        ("🧭 User Menu", "admin:menu"),
+        ("👮 Admin Management", "admin:admins"),
+        ("🆘 Support Tickets", "admin:support"),
         ("📣 Broadcast", "admin:broadcast"),
-        ("🔄 Refresh", "admin:home"),
+        ("⚙️ Settings", "admin:settings"),
+        ("🔄 Refresh Panel", "admin:home"),
     ]
     for label, data in buttons:
         kb.button(text=label, callback_data=data)
-    kb.adjust(2, 2, 2, 2, 2, 2)
+    # Keep the dashboard consistently arranged in two columns.
+    kb.adjust(2)
     return kb.as_markup()
 
 
