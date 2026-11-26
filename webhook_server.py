@@ -8,7 +8,6 @@ from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
 
 from config import BOT_TOKEN
 from db import db
@@ -26,7 +25,7 @@ def validate_init_data(init_data: str) -> dict:
     received_hash = values.pop("hash", "")
     if not received_hash:
         raise HTTPException(status_code=401, detail="Invalid Telegram signature")
-    data_check = "\\n".join(f"{k}={v}" for k, v in sorted(values.items()))
+    data_check = "\n".join(f"{k}={v}" for k, v in sorted(values.items()))
     secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     expected = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, received_hash):
