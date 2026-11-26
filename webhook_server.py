@@ -6,13 +6,14 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from config import BOT_TOKEN
 from db import db
 from services_phonepe import verify_webhook_signature
 from utils import is_admin
+from feature_controls import FEATURES, FEATURE_KEYS, MASTER_KEY
 
 log = logging.getLogger(__name__)
 app = FastAPI()
@@ -89,3 +90,54 @@ async def phonepe_callback(request):
         log.warning("Rejected unverified PhonePe callback")
         return Response(status_code=401)
     return Response(status_code=501)
+
+
+@app.get("/admin-app/api/features")
+async def list_shop_features(x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data")):
+    admin = await require_web_admin(x_telegram_init_data)
+    try:
+        rows = await db().fetch("SELECT feature_key,is_enabled,updated_by,updated_at FROM shop_feature_flags")
+        saved = {r["feature_key"]: r for r in rows}
+        master = bool(saved.get(MASTER_KEY, {}).get("is_enabled", False)) if isinstance(saved.get(MASTER_KEY), dict) else bool(saved[MASTER_KEY]["is_enabled"]) if MASTER_KEY in saved else False
+        result = []
+        for item in FEATURES:
+            row = saved.get(item["key"])
+            enabled = bool(row["is_enabled"]) if row else False
+            result.append({**item, "enabled": enabled, "effective": enabled and (master or item["key"] == MASTER_KEY)})
+        return {"ok": True, "admin": admin["first_name"], "master_enabled": master, "features": result}
+    except Exception:
+        log.exception("Feature switch list failed")
+        raise HTTPException(status_code=503, detail="Feature settings temporarily unavailable")
+
+
+@app.post("/admin-app/api/features/{feature_key}")
+async def set_shop_feature(feature_key: str, request: Request,
+                           x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data")):
+    admin = await require_web_admin(x_telegram_init_data)
+    if feature_key not in FEATURE_KEYS:
+        raise HTTPException(status_code=404, detail="Unknown feature")
+    try:
+        payload = await request.json()
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            raise HTTPException(status_code=422, detail="enabled must be true or false")
+        async with db().acquire() as conn:
+            async with conn.transaction():
+                previous = await conn.fetchval("SELECT is_enabled FROM shop_feature_flags WHERE feature_key=$1 FOR UPDATE", feature_key)
+                old_value = bool(previous) if previous is not None else False
+                await conn.execute(
+                    """INSERT INTO shop_feature_flags(feature_key,is_enabled,updated_by,updated_at)
+                       VALUES($1,$2,$3,NOW())
+                       ON CONFLICT(feature_key) DO UPDATE
+                       SET is_enabled=EXCLUDED.is_enabled,updated_by=EXCLUDED.updated_by,updated_at=NOW()""",
+                    feature_key, enabled, admin["id"])
+                await conn.execute(
+                    """INSERT INTO shop_feature_audit(feature_key,old_value,new_value,changed_by)
+                       VALUES($1,$2,$3,$4)""",
+                    feature_key, old_value, enabled, admin["id"])
+        return {"ok": True, "feature_key": feature_key, "enabled": enabled}
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Feature switch update failed: %s", feature_key)
+        raise HTTPException(status_code=503, detail="Could not save feature setting")
