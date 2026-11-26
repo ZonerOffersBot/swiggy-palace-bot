@@ -328,3 +328,52 @@ async def disable_shop_product(product_id: int, x_telegram_init_data: str = Head
                 raise HTTPException(status_code=404,detail="Available product not found")
             await _shop_audit(conn,admin["id"],"shop_product_soft_disabled",{"product_id":product_id})
     return {"ok":True,"product_id":product_id,"status":"disabled"}
+
+
+# Read-only operational views for the digital shop admin dashboard.
+@app.get("/admin-app/api/shop/orders")
+async def shop_orders(x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data"), limit: int = 50, offset: int = 0, status: str = ""):
+    await _shop_admin(x_telegram_init_data)
+    if not await _shop_feature_enabled("orders_delivery_all_orders"):
+        raise HTTPException(status_code=403, detail="Order management is disabled")
+    limit=max(1,min(limit,100)); offset=max(0,offset)
+    allowed={"pending","processing","paid","failed","cancelled","refunded"}
+    if status and status not in allowed:
+        raise HTTPException(status_code=422,detail="Invalid order status")
+    rows=await db().fetch(
+        """SELECT o.order_id::text,o.user_id,o.amount,o.currency,o.status,o.gateway,
+                  o.created_at,o.paid_at,u.username,u.first_name
+           FROM orders o JOIN users u ON u.telegram_id=o.user_id
+           WHERE ($1='' OR o.status=$1)
+           ORDER BY o.created_at DESC LIMIT $2 OFFSET $3""",status,limit,offset)
+    return {"ok":True,"orders":[dict(r) for r in rows],"limit":limit,"offset":offset}
+
+@app.get("/admin-app/api/shop/customers")
+async def shop_customers(x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data"), limit: int = 50, offset: int = 0, q: str = ""):
+    await _shop_admin(x_telegram_init_data)
+    if not await _shop_feature_enabled("customers_users_customer_directory"):
+        raise HTTPException(status_code=403,detail="Customer directory is disabled")
+    limit=max(1,min(limit,100)); offset=max(0,offset); q=q.strip()[:80]
+    rows=await db().fetch(
+        """SELECT u.telegram_id,u.username,u.first_name,u.full_name,u.created_at,
+                  COALESCE(w.balance_paise,0) AS wallet_balance_paise,
+                  (SELECT COUNT(*) FROM orders o WHERE o.user_id=u.telegram_id) AS order_count
+           FROM users u LEFT JOIN wallets w ON w.user_id=u.telegram_id
+           WHERE ($1='' OR u.telegram_id::text ILIKE '%'||$1||'%' OR COALESCE(u.username,'') ILIKE '%'||$1||'%' OR COALESCE(u.full_name,u.first_name,'') ILIKE '%'||$1||'%')
+           ORDER BY u.created_at DESC LIMIT $2 OFFSET $3""",q,limit,offset)
+    return {"ok":True,"customers":[dict(r) for r in rows],"limit":limit,"offset":offset}
+
+@app.get("/admin-app/api/shop/support")
+async def shop_support(x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data"), limit: int = 50, offset: int = 0, status: str = "open"):
+    await _shop_admin(x_telegram_init_data)
+    if not await _shop_feature_enabled("support_notifications_support_inbox"):
+        raise HTTPException(status_code=403,detail="Support inbox is disabled")
+    if status not in {"open","closed","all"}:
+        raise HTTPException(status_code=422,detail="Invalid support status")
+    limit=max(1,min(limit,100)); offset=max(0,offset)
+    rows=await db().fetch(
+        """SELECT id,user_id,username,full_name,COALESCE(message,query,'') AS message,
+                  status,admin_reply,created_at,replied_at
+           FROM support_tickets WHERE ($1='all' OR status=$1)
+           ORDER BY created_at DESC LIMIT $2 OFFSET $3""",status,limit,offset)
+    return {"ok":True,"tickets":[dict(r) for r in rows],"limit":limit,"offset":offset}
