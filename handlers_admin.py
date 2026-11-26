@@ -2,11 +2,11 @@ import asyncio
 import logging
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, WebAppInfo
+from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from config import EVENT_NAME, ADMIN_WEBAPP_URL
+from config import EVENT_NAME
 from db import db
 from utils import is_admin, log_audit
 log = logging.getLogger(__name__)
@@ -34,9 +34,6 @@ def admin_keyboard():
     ]
     for label, data in buttons:
         kb.button(text=label, callback_data=data)
-    # Launch the colourful Web App when its public HTTPS URL is configured.
-    if ADMIN_WEBAPP_URL.startswith("https://"):
-        kb.button(text="🌈 Open Colourful Dashboard", web_app=WebAppInfo(url=ADMIN_WEBAPP_URL))
     # Keep the dashboard consistently arranged in two columns.
     kb.adjust(2)
     return kb.as_markup()
