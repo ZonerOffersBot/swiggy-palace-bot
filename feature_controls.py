@@ -402,4 +402,4 @@ FEATURES = [
   }
 ]
 FEATURE_KEYS = {item["key"] for item in FEATURES}
-MASTER_KEY = "security_system_health_master_shop_emergency_switch"
+MASTER_KEY = "security_backup_system_health_master_shop_emergency_switch"
