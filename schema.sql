@@ -321,3 +321,21 @@ ON CONFLICT(key) DO NOTHING;
 INSERT INTO user_menu(key,label,position,is_active)
 VALUES ('myticketfiles','📦 My Ticket Files',8,TRUE)
 ON CONFLICT(key) DO NOTHING;
+
+
+-- Digital shop feature controls: additive, auditable and independently switchable.
+CREATE TABLE IF NOT EXISTS shop_feature_flags (
+  feature_key TEXT PRIMARY KEY,
+  is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by BIGINT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS shop_feature_audit (
+  id BIGSERIAL PRIMARY KEY,
+  feature_key TEXT NOT NULL,
+  old_value BOOLEAN NOT NULL,
+  new_value BOOLEAN NOT NULL,
+  changed_by BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS shop_feature_audit_created_idx ON shop_feature_audit(created_at DESC);
