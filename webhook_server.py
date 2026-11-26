@@ -1,23 +1,92 @@
+import hashlib
+import hmac
+import json
 import logging
-from fastapi import FastAPI, Request, Response
+import time
+from pathlib import Path
+from urllib.parse import parse_qsl
+
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
+
+from config import BOT_TOKEN
+from db import db
 from services_phonepe import verify_webhook_signature
-log=logging.getLogger(__name__)
-app=FastAPI()
+from utils import is_admin
+
+log = logging.getLogger(__name__)
+app = FastAPI()
+STATIC_DIR = Path(__file__).parent / "admin_webapp"
+
+def validate_init_data(init_data: str) -> dict:
+    if not init_data:
+        raise HTTPException(status_code=401, detail="Telegram session required")
+    values = dict(parse_qsl(init_data, keep_blank_values=True))
+    received_hash = values.pop("hash", "")
+    if not received_hash:
+        raise HTTPException(status_code=401, detail="Invalid Telegram signature")
+    data_check = "\\n".join(f"{k}={v}" for k, v in sorted(values.items()))
+    secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    expected = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, received_hash):
+        raise HTTPException(status_code=401, detail="Telegram signature check failed")
+    try:
+        auth_date = int(values.get("auth_date", "0"))
+        user = json.loads(values.get("user", "{}"))
+        user_id = int(user["id"])
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        raise HTTPException(status_code=401, detail="Invalid Telegram user")
+    if time.time() - auth_date > 86400 or auth_date > time.time() + 60:
+        raise HTTPException(status_code=401, detail="Telegram session expired")
+    return {"id": user_id, "first_name": str(user.get("first_name", "Admin"))}
+
+async def require_web_admin(init_data: str):
+    user = validate_init_data(init_data)
+    if not await is_admin(user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access denied")
+    return user
 
 @app.get("/")
 async def root():
-    # Render may probe the root URL; return a lightweight health response instead of 404.
     return {"ok": True, "service": "swiggy-swagger-bot"}
 
 @app.get("/health")
 async def health():
     return {"ok": True, "service": "swiggy-swagger-bot", "phonepe": "disabled-until-verified"}
 
+@app.get("/admin-app")
+async def admin_app():
+    page = STATIC_DIR / "index.html"
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="Admin app not installed")
+    return FileResponse(page)
+
+@app.get("/admin-app/api/dashboard")
+async def dashboard(x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data")):
+    admin = await require_web_admin(x_telegram_init_data)
+    try:
+        users = await db().fetchval("SELECT COUNT(*) FROM users")
+        orders = await db().fetchval("SELECT COUNT(*) FROM orders")
+        paid = await db().fetchval("SELECT COUNT(*) FROM orders WHERE status='paid'")
+        tickets = await db().fetchval("SELECT COUNT(*) FROM tickets")
+        pending = await db().fetchval("SELECT COUNT(*) FROM orders WHERE status IN ('pending','created')")
+        support = await db().fetchval("SELECT COUNT(*) FROM support_tickets WHERE status='open'")
+        return {"ok": True, "admin": admin["first_name"], "stats": {
+            "users": int(users or 0), "orders": int(orders or 0),
+            "paid_orders": int(paid or 0), "tickets": int(tickets or 0),
+            "pending_orders": int(pending or 0), "open_support": int(support or 0)
+        }}
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Admin Web App dashboard query failed")
+        raise HTTPException(status_code=503, detail="Dashboard data temporarily unavailable")
+
 @app.post("/phonepe/callback")
-async def phonepe_callback(request: Request):
-    raw=(await request.body()).decode("utf-8",errors="replace")
-    if not verify_webhook_signature(raw,request.headers.get("X-VERIFY","")):
+async def phonepe_callback(request):
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    if not verify_webhook_signature(raw, request.headers.get("X-VERIFY", "")):
         log.warning("Rejected unverified PhonePe callback")
         return Response(status_code=401)
-    # Deliberately no payment mutation until the current merchant callback schema and signature are verified.
     return Response(status_code=501)
