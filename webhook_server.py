@@ -98,7 +98,7 @@ async def list_shop_features(x_telegram_init_data: str = Header(default="", alia
     try:
         rows = await db().fetch("SELECT feature_key,is_enabled,updated_by,updated_at FROM shop_feature_flags")
         saved = {r["feature_key"]: r for r in rows}
-        master = bool(saved.get(MASTER_KEY, {}).get("is_enabled", False)) if isinstance(saved.get(MASTER_KEY), dict) else bool(saved[MASTER_KEY]["is_enabled"]) if MASTER_KEY in saved else False
+        master = bool(saved[MASTER_KEY]["is_enabled"]) if MASTER_KEY in saved else False
         result = []
         for item in FEATURES:
             row = saved.get(item["key"])
