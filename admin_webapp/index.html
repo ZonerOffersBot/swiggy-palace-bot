@@ -21,8 +21,22 @@
 </section>
 <section class="hero" style="margin-top:18px"><h2>🎛 Digital Shop Feature Switchboard</h2><p>80 independently persisted feature switches. New switches start OFF until an administrator enables them.</p><div class="actions"><button class="btn alt" onclick="loadFeatures()">↻ Refresh switches</button><button class="btn" onclick="setMaster(false)">⛔ Emergency OFF</button><button class="btn" onclick="setMaster(true)">🟢 Master ON</button></div></section>
 <div id="featureGroups"></div>
+<section class="feature-group"><h3>🗂️ Digital shop manager</h3>
+<p class="sub">Manage digital-only categories and inventory. Files are attached using Telegram file_id copied from an uploaded item.</p>
+<div class="feature-row"><input id="catKey" placeholder="category_key" aria-label="Category key"><input id="catLabel" placeholder="Category name" aria-label="Category name"></div>
+<div class="feature-row"><input id="catPrice" type="number" min="0" placeholder="Price in paise" aria-label="Price in paise"><button class="btn" onclick="createCategory()">＋ Add category</button></div>
+<div id="categories"></div>
+<hr>
+<div class="feature-row"><select id="prodCategory" aria-label="Product category"></select><select id="prodType" aria-label="Product type" onchange="toggleProductInput()"><option value="text">Text</option><option value="document">Document</option><option value="photo">Photo</option></select></div>
+<input id="prodFile" placeholder="Telegram file_id (document/photo)" style="display:none;width:100%;padding:12px;margin:6px 0;border-radius:10px">
+<textarea id="prodText" placeholder="Digital text content" rows="4" style="width:100%;padding:12px;margin:6px 0;border-radius:10px"></textarea>
+<input id="prodName" placeholder="File name (optional)" style="width:100%;padding:12px;margin:6px 0;border-radius:10px">
+<input id="prodCaption" placeholder="Caption (optional)" style="width:100%;padding:12px;margin:6px 0;border-radius:10px">
+<button class="btn" style="width:100%;margin:6px 0" onclick="createProduct()">＋ Add digital product</button>
+<div id="products"></div>
+</section>
 <section class="actions"><button class="btn" onclick="refresh()">↻ Refresh Stats</button><button class="btn alt" onclick="openBot()">⚙️ Open Bot Controls</button></section>
-<div class="foot">Protected by Telegram Web App authentication • Read-only overview</div>
+<div class="foot">Protected by Telegram Web App authentication • Digital shop controls</div>
 </main><script>
 const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();
 function showError(t){const e=document.getElementById('error');e.textContent=t;e.style.display='block'}
@@ -32,5 +46,25 @@ async function loadFeatures(){try{const d=await api('/admin-app/api/features');c
 async function setFeature(key,enabled,button){if(button)button.disabled=true;try{await api('/admin-app/api/features/'+encodeURIComponent(key),{method:'POST',body:JSON.stringify({enabled})});await loadFeatures()}catch(e){showError(e.message)}finally{if(button)button.disabled=false}}
 async function setMaster(enabled){try{const d=await api('/admin-app/api/features/'+encodeURIComponent('security_backup_system_health_master_shop_emergency_switch'),{method:'POST',body:JSON.stringify({enabled})});await loadFeatures();showError(enabled?'Master switch enabled.':'Emergency OFF enabled. Individual settings were preserved.')}catch(e){showError(e.message)}}
 function openBot(){if(tg){tg.close()}else{showError('Open this page inside Telegram to return to bot controls.')}}
-refresh();loadFeatures();setInterval(refresh,60000);
+
+async function loadShop(){try{
+ const [cd,pd]=await Promise.all([api('/admin-app/api/shop/categories'),api('/admin-app/api/shop/products')]);
+ const cs=document.getElementById('categories');cs.innerHTML='';
+ const sel=document.getElementById('prodCategory');sel.innerHTML='';
+ for(const x of cd.categories){const o=document.createElement('option');o.value=x.id;o.textContent=x.label+' • ₹'+(Number(x.price_paise)/100).toFixed(2);sel.appendChild(o);
+ const row=document.createElement('div');row.className='feature-row';
+ const name=document.createElement('span');name.textContent=x.label+' ('+x.available_count+' available)';
+ const p=document.createElement('input');p.type='number';p.value=x.price_paise;p.style.width='100px';p.setAttribute('aria-label','Category price in paise');
+ const save=document.createElement('button');save.className='toggle on';save.textContent='Save';save.onclick=async()=>{await api('/admin-app/api/shop/categories/'+x.id,{method:'PATCH',body:JSON.stringify({price_paise:Number(p.value)})});await loadShop()};
+ row.append(name,p,save);cs.appendChild(row)}
+ const ps=document.getElementById('products');ps.innerHTML='';
+ for(const x of pd.products){const row=document.createElement('div');row.className='feature-row';
+ const t=document.createElement('span');t.textContent='#'+x.id+' • '+x.category+' • '+x.item_type+' • '+x.status;
+ const b=document.createElement('button');b.className='toggle';b.textContent='Disable';b.disabled=x.status!=='available';b.onclick=async()=>{await api('/admin-app/api/shop/products/'+x.id+'/disable',{method:'POST'});await loadShop()};
+ row.append(t,b);ps.appendChild(row)}
+ }catch(e){showError(e.message)}}
+function toggleProductInput(){const isText=document.getElementById('prodType').value==='text';document.getElementById('prodText').style.display=isText?'block':'none';document.getElementById('prodFile').style.display=isText?'none':'block'}
+async function createCategory(){try{await api('/admin-app/api/shop/categories',{method:'POST',body:JSON.stringify({key:document.getElementById('catKey').value,label:document.getElementById('catLabel').value,price_paise:Number(document.getElementById('catPrice').value)})});document.getElementById('catKey').value='';document.getElementById('catLabel').value='';await loadShop()}catch(e){showError(e.message)}}
+async function createProduct(){try{const type=document.getElementById('prodType').value;const body={category_id:Number(document.getElementById('prodCategory').value),item_type:type,file_name:document.getElementById('prodName').value,caption:document.getElementById('prodCaption').value};if(type==='text')body.text_content=document.getElementById('prodText').value;else body.telegram_file_id=document.getElementById('prodFile').value;await api('/admin-app/api/shop/products',{method:'POST',body:JSON.stringify(body)});document.getElementById('prodText').value='';document.getElementById('prodFile').value='';await loadShop()}catch(e){showError(e.message)}}
+refresh();loadFeatures();loadShop();toggleProductInput();setInterval(refresh,60000);setInterval(loadShop,60000);
 </script></body></html>
