@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10142d"><title>Swagger Admin</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#0d1024;--card:#191e3c;--muted:#aeb7d8;--white:#f8f9ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0%,#37307b 0,#171b3b 35%,#0d1024 78%);font-family:Inter,system-ui,Arial;color:var(--white);min-height:100vh;padding:20px 16px 34px}
+.wrap{max-width:760px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0 22px}.brand{font-size:12px;letter-spacing:2px;color:#b8c2ff;font-weight:800}.title{font-size:27px;font-weight:850;margin:5px 0}.sub{color:var(--muted);font-size:13px}.pill{background:#123d3b;color:#6ff4cb;padding:8px 12px;border-radius:99px;font-size:12px;font-weight:800}
+.hero{padding:20px;border-radius:24px;background:linear-gradient(120deg,#7147e8,#3268db 55%,#16a7a0);box-shadow:0 16px 40px #05081788;margin-bottom:18px}.hero h2{margin:0 0 7px;font-size:20px}.hero p{margin:0;color:#e5eaff;font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{border:1px solid #ffffff17;border-radius:19px;padding:17px;background:linear-gradient(145deg,#22294e,#171b36);min-height:118px;box-shadow:0 10px 25px #05081755}.icon{font-size:24px}.label{font-size:12px;color:var(--muted);margin-top:12px}.value{font-size:27px;font-weight:850;margin-top:3px}.wide{grid-column:1/-1}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}.btn{border:0;border-radius:15px;padding:15px 12px;font-weight:800;color:white;background:linear-gradient(120deg,#7254ec,#456fe9);font-size:13px}.btn.alt{background:linear-gradient(120deg,#e45d9c,#a64be0)}.foot{text-align:center;color:#8992b8;font-size:11px;margin-top:20px}.error{display:none;background:#6b243d;padding:12px;border-radius:12px;margin:12px 0;font-size:13px}
+@media(max-width:360px){.grid{gap:8px}.card{padding:13px}.value{font-size:23px}}
+</style></head><body><main class="wrap">
+<header class="top"><div><div class="brand">SWIGGY SWAGGER • CONTROL CENTER</div><div class="title">Admin Dashboard</div><div class="sub" id="hello">Secure Telegram admin session</div></div><div class="pill">● LIVE</div></header>
+<section class="hero"><h2>✨ Welcome to your control room</h2><p>Quick overview of users, orders, tickets and support. Existing bot controls remain available in Telegram.</p></section>
+<div class="error" id="error"></div>
+<section class="grid">
+<div class="card"><div class="icon">👥</div><div class="label">TOTAL USERS</div><div class="value" id="users">—</div></div>
+<div class="card"><div class="icon">🧾</div><div class="label">ALL ORDERS</div><div class="value" id="orders">—</div></div>
+<div class="card"><div class="icon">✅</div><div class="label">PAID ORDERS</div><div class="value" id="paid">—</div></div>
+<div class="card"><div class="icon">⏳</div><div class="label">PENDING ORDERS</div><div class="value" id="pending">—</div></div>
+<div class="card"><div class="icon">🎟️</div><div class="label">TICKETS ISSUED</div><div class="value" id="tickets">—</div></div>
+<div class="card"><div class="icon">🆘</div><div class="label">OPEN SUPPORT</div><div class="value" id="support">—</div></div>
+</section>
+<section class="actions"><button class="btn" onclick="refresh()">↻ Refresh Stats</button><button class="btn alt" onclick="openBot()">⚙️ Open Bot Controls</button></section>
+<div class="foot">Protected by Telegram Web App authentication • Read-only overview</div>
+</main><script>
+const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();
+function showError(t){const e=document.getElementById('error');e.textContent=t;e.style.display='block'}
+async function refresh(){try{if(!tg?.initData)throw new Error('Open this dashboard from the Telegram bot admin panel.');const r=await fetch('/admin-app/api/dashboard',{headers:{'X-Telegram-Init-Data':tg.initData}});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Unable to load dashboard');const s=d.stats;for(const [id,v] of Object.entries({users:s.users,orders:s.orders,paid:s.paid_orders,pending:s.pending_orders,tickets:s.tickets,support:s.open_support}))document.getElementById(id).textContent=Number(v).toLocaleString();document.getElementById('hello').textContent='Welcome, '+d.admin+' • Updated '+new Date().toLocaleTimeString();document.getElementById('error').style.display='none'}catch(e){showError(e.message)}}
+function openBot(){if(tg){tg.close()}else{showError('Open this page inside Telegram to return to bot controls.')}}
+refresh();setInterval(refresh,60000);
+</script></body></html>
