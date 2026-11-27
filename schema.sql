@@ -360,3 +360,8 @@ VALUES
  ('security_backup_system_health_master_shop_emergency_switch', TRUE),
  ('products_digital_inventory_product_catalogue', TRUE)
 ON CONFLICT(feature_key) DO NOTHING;
+
+
+-- Additive theme artwork fields for shop categories.
+ALTER TABLE inventory_categories ADD COLUMN IF NOT EXISTS image_file_id TEXT;
+ALTER TABLE inventory_categories ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';

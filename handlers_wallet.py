@@ -366,7 +366,7 @@ async def buy_categories(cb: CallbackQuery):
     if not await feature_enabled("products_digital_inventory_product_catalogue"):
         await cb.answer("Digital shop abhi unavailable hai.", show_alert=True)
         return
-    rows = await db().fetch("SELECT id,label,price_paise FROM inventory_categories WHERE is_active=TRUE ORDER BY position,id")
+    rows = await db().fetch("SELECT id,label,price_paise,image_file_id,description FROM inventory_categories WHERE is_active=TRUE ORDER BY position,id")
     kb = InlineKeyboardBuilder()
     for row in rows:
         count = await db().fetchval("SELECT COUNT(*) FROM digital_inventory WHERE category_id=$1 AND status='available'", row["id"])
@@ -398,10 +398,11 @@ async def choose_inventory_category(cb: CallbackQuery, state: FSMContext):
     kb.button(text="🔢 Custom quantity", callback_data="files:qty:custom")
     kb.button(text="⬅️ Categories", callback_data="menu:buyfiles")
     kb.adjust(2, 2, 1, 1)
-    await cb.message.answer(
-        f"🛒 <b>{cat['label']}</b>\nPrice per file: {money(cat['price_paise'])}\nAvailable: {count}\n\nQuantity select karein:",
-        reply_markup=kb.as_markup(),
-    )
+    caption = f"🛒 <b>{cat['label']}</b>\n{cat['description'] or ''}\nPrice per file: {money(cat['price_paise'])}\nAvailable: {count}\n\nQuantity select karein:"
+    if cat["image_file_id"]:
+        await cb.message.answer_photo(cat["image_file_id"], caption=caption, reply_markup=kb.as_markup())
+    else:
+        await cb.message.answer(caption, reply_markup=kb.as_markup())
 
 
 @router.callback_query(F.data.startswith("files:qty:"))
