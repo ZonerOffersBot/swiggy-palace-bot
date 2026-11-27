@@ -339,3 +339,11 @@ CREATE TABLE IF NOT EXISTS shop_feature_audit (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS shop_feature_audit_created_idx ON shop_feature_audit(created_at DESC);
+
+-- Enable the Telegram JSON Shop by default on first installation.
+-- Existing admin choices are preserved by ON CONFLICT DO NOTHING.
+INSERT INTO shop_feature_flags(feature_key,is_enabled)
+VALUES
+ ('security_backup_system_health_master_shop_emergency_switch', TRUE),
+ ('products_digital_inventory_product_catalogue', TRUE)
+ON CONFLICT(feature_key) DO NOTHING;
