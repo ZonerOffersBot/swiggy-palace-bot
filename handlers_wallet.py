@@ -366,7 +366,7 @@ async def buy_categories(cb: CallbackQuery):
     if not await feature_enabled("products_digital_inventory_product_catalogue"):
         await cb.answer("Digital shop abhi unavailable hai.", show_alert=True)
         return
-    rows = await db().fetch("SELECT id,label,price_paise FROM inventory_categories WHERE is_active=TRUE ORDER BY position,id")
+    rows = await db().fetch("SELECT id,label,price_paise,image_file_id,description FROM inventory_categories WHERE is_active=TRUE ORDER BY position,id")
     kb = InlineKeyboardBuilder()
     for row in rows:
         count = await db().fetchval("SELECT COUNT(*) FROM digital_inventory WHERE category_id=$1 AND status='available'", row["id"])
