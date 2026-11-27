@@ -8,6 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
 from aiogram.types import InlineKeyboardButton
 from config import EVENT_NAME, EVENT_DATE, VENUE, TICKET_PRICE_INR, TICKET_PRICE_STARS
 from db import db
+from menu_art import user_menu_photo
 from utils import get_setting, get_all_admin_ids
 
 log = logging.getLogger(__name__)
@@ -57,10 +58,13 @@ async def start(msg: Message, state: FSMContext):
     )
     lines = [f"• {row['label']} — ₹{row['price_inr'] / 100:.0f} or ⭐ {row['price_stars']}" for row in tiers]
     ticket_text = "\n".join(lines) if lines else "Tickets are not on sale right now. Please check back later."
-    await msg.answer(
-        f"{welcome}\n\n🎭 <b>{event}</b>\n📅 {date}\n📍 {venue}"
-        f"\n\n<b>Available tickets</b>\n{ticket_text}"
-        f"\n\nChoose an option below whenever you're ready.",
+    await msg.answer_photo(
+        photo=user_menu_photo(),
+        caption=(
+            f"{welcome}\n\n🎭 <b>{event}</b>\n📅 {date}\n📍 {venue}"
+            f"\n\n<b>Available tickets</b>\n{ticket_text}"
+            f"\n\nChoose an option below whenever you're ready."
+        ),
         reply_markup=await build_home_kb(),
     )
 
@@ -84,7 +88,7 @@ async def cancel(msg: Message, state: FSMContext):
 @router.callback_query(F.data == "user:home")
 async def home(cb: CallbackQuery):
     await cb.answer()
-    await cb.message.answer("Main menu:", reply_markup=await build_home_kb())
+    await cb.message.answer_photo(photo=user_menu_photo(), caption="Main menu:", reply_markup=await build_home_kb())
 
 
 @router.callback_query(F.data == "menu:help")
