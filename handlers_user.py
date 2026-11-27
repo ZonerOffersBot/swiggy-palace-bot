@@ -114,29 +114,41 @@ async def help_start(cb: CallbackQuery):
 async def support_faq(cb: CallbackQuery):
     kb = InlineKeyboardBuilder()
     questions = [
-        ("🛒 JSON Shop open nahi ho raha", "faq:shop"),
-        ("💰 Wallet balance / deposit", "faq:wallet"),
-        ("📦 Purchase / file delivery", "faq:delivery"),
-        ("💳 Payment pending", "faq:payment"),
+        ("🧭 Bot kaise use karein?", "faq:howto"),
+        ("🛒 JSON Shop load nahi ho raha", "faq:shop"),
+        ("💰 Wallet balance kaise dekhein?", "faq:wallet"),
+        ("➕ Wallet deposit pending", "faq:deposit"),
+        ("💳 Payment deduct, order pending", "faq:payment"),
+        ("📦 Purchase ke baad file nahi mili", "faq:delivery"),
+        ("📂 File download/open nahi ho rahi", "faq:file"),
+        ("🔁 Galat ya duplicate purchase", "faq:duplicate"),
         ("🎟 Ticket / order status", "faq:ticket"),
-        ("💬 Talk to support", "support:new"),
+        ("🔐 Force-join verify nahi ho raha", "faq:join"),
+        ("↩️ Refund / cancellation query", "faq:refund"),
+        ("💬 Live Chat with Support", "support:new"),
         ("⬅️ Support Centre", "menu:help"),
     ]
     for label, key in questions:
         kb.button(text=label, callback_data=key)
     kb.adjust(1)
     await cb.answer()
-    await cb.message.answer("📚 <b>Help & FAQs</b>\nApni problem select karein. Agar solution na mile to Live Chat par message bhejein.", reply_markup=kb.as_markup())
+    await cb.message.answer("📚 <b>Help & FAQs</b>\nNeeche apna sawal select karein. Har jawab ke baad zarurat ho to Live Chat par support team ko message bhej sakte hain.", reply_markup=kb.as_markup())
 
 
 @router.callback_query(F.data.startswith("faq:"))
 async def support_faq_answer(cb: CallbackQuery):
     answers = {
-        "faq:shop": "🛒 <b>JSON Shop</b>\nShop unavailable ya empty dikhe to thodi der baad Refresh karke dekhein. Agar issue rahe, Live Chat par screenshot aur problem bhejein.",
-        "faq:wallet": "💰 <b>Wallet</b>\nWallet section mein balance aur transaction history dekhein. Deposit ke liye bot mein dikhaye gaye instructions follow karein aur payment reference sambhal kar rakhein.",
-        "faq:delivery": "📦 <b>Purchase & delivery</b>\nMy Purchases mein order status aur purchased files dekhein. Delivery na mile to order ID ke saath Live Chat par message bhejein.",
-        "faq:payment": "💳 <b>Payment pending</b>\nPayment status update hone mein thoda waqt lag sakta hai. Dobara payment karne se pehle transaction history check karein. Pending rahe to UTR/reference ke saath Live Chat karein.",
-        "faq:ticket": "🎟 <b>Ticket / order</b>\nMy Tickets mein ticket status dekhein. Ticket ya order mein dikkat ho to order details ke saath Live Chat karein.",
+        "faq:howto": "🧭 <b>Bot kaise use karein?</b>\n/start bhejkar main menu kholein. Buttons se Shop, Wallet, My Purchases aur Help / Support select karein. Kisi option par response na aaye to button dobara tap karke Live Chat par report karein.",
+        "faq:shop": "🛒 <b>JSON Shop load nahi ho raha</b>\n1) Bot ko /start bhejein. 2) JSON Shop ko dobara open karein. 3) Thodi der baad Refresh karke dekhein. Agar 'unavailable' ya blank screen phir bhi aaye, screenshot aur approximate time ke saath Live Chat par report karein.",
+        "faq:wallet": "💰 <b>Wallet balance kaise dekhein?</b>\nMain menu mein Wallet kholein. Balance aur available wallet actions wahin dikhte hain. Purane credits/debits verify karne ke liye Transaction History check karein.",
+        "faq:deposit": "➕ <b>Wallet deposit pending</b>\nPayment ka UTR / transaction reference aur receipt sambhal kar rakhein. Transaction History check karein aur status update hone ke liye kuch waqt dein. Amount debit ho gaya lekin wallet credit nahi hua, to Live Chat par UTR, amount aur payment time bhejein. Verify hone se pehle same deposit repeat na karein.",
+        "faq:payment": "💳 <b>Payment deduct hua, order pending hai</b>\nDobara payment turant na karein. Transaction / order history check karein. Live Chat par order ID, UTR/reference, amount aur payment time bhejein. Support team payment status verify kar sakegi.",
+        "faq:delivery": "📦 <b>Purchase ke baad file nahi mili</b>\nMy Purchases kholkar order status aur delivery details check karein. Agar order paid/complete hai lekin file nahi dikhti, order ID ke saath Live Chat par message bhejein.",
+        "faq:file": "📂 <b>File download ya open nahi ho rahi</b>\nFile ko dobara download karein, device mein free storage check karein aur supported app se open karein. Agar file corrupt, password-protected ya missing lagti hai, file ka naam aur order ID Live Chat par bhejein. Apna password ya OTP share na karein.",
+        "faq:duplicate": "🔁 <b>Galat ya duplicate purchase</b>\nMy Purchases mein dono order entries check karein. Dono order IDs, item name aur payment references Live Chat par bhejein. Support team records check karegi; refund ya reversal eligibility review ke baad hi confirm hogi.",
+        "faq:ticket": "🎟 <b>Ticket / order status</b>\nMy Tickets ya My Purchases mein latest status dekhein. Pending ya missing ticket ke liye order ID / ticket code aur payment reference Live Chat par bhejein. Ticket code ko public group mein share na karein.",
+        "faq:join": "🔐 <b>Force-join verify nahi ho raha</b>\nRequired channel(s) ko join karein, Telegram mein membership confirm hone dein, phir bot par Verify button dobara tap karein. Agar issue rahe to channel ka naam aur screenshot Live Chat par bhejein.",
+        "faq:refund": "↩️ <b>Refund / cancellation</b>\nRefund aur cancellation order type aur applicable policy par depend karte hain; automatic approval guaranteed nahi hai. Order ID, reason aur payment reference Live Chat par bhejein. Support team eligibility check karke update degi.",
     }
     answer = answers.get(cb.data)
     if not answer:
