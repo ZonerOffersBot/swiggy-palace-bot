@@ -398,10 +398,11 @@ async def choose_inventory_category(cb: CallbackQuery, state: FSMContext):
     kb.button(text="🔢 Custom quantity", callback_data="files:qty:custom")
     kb.button(text="⬅️ Categories", callback_data="menu:buyfiles")
     kb.adjust(2, 2, 1, 1)
-    await cb.message.answer(
-        f"🛒 <b>{cat['label']}</b>\nPrice per file: {money(cat['price_paise'])}\nAvailable: {count}\n\nQuantity select karein:",
-        reply_markup=kb.as_markup(),
-    )
+    caption = f"🛒 <b>{cat['label']}</b>\n{cat['description'] or ''}\nPrice per file: {money(cat['price_paise'])}\nAvailable: {count}\n\nQuantity select karein:"
+    if cat["image_file_id"]:
+        await cb.message.answer_photo(cat["image_file_id"], caption=caption, reply_markup=kb.as_markup())
+    else:
+        await cb.message.answer(caption, reply_markup=kb.as_markup())
 
 
 @router.callback_query(F.data.startswith("files:qty:"))
