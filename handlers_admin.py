@@ -7,6 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from config import EVENT_NAME
+from menu_art import admin_menu_photo
 from db import db
 from utils import is_admin, log_audit
 log = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ async def admin_panel(msg: Message):
         )
         return
     try:
-        await msg.answer(await admin_home_text(), reply_markup=admin_keyboard())
+        await msg.answer_photo(photo=admin_menu_photo(), caption=await admin_home_text(), reply_markup=admin_keyboard())
     except Exception:
         log.exception("Admin panel failed for user %s", msg.from_user.id)
         await msg.answer("⚠️ Admin panel database error. Render Logs mein /admin ke baad wali traceback check karein.")
@@ -176,7 +177,10 @@ async def admin_navigation(cb: CallbackQuery):
             text = "Unknown admin section."
         await cb.answer()
         if cb.message:
-            await cb.message.answer(text, reply_markup=section_markup)
+            if section == "home":
+                await cb.message.answer_photo(photo=admin_menu_photo(), caption=text, reply_markup=section_markup)
+            else:
+                await cb.message.answer(text, reply_markup=section_markup)
     except Exception:
         log.exception("Admin section %s failed for user %s", section, cb.from_user.id)
         await cb.answer("Section load nahi hua. Render Logs check karein.", show_alert=True)
