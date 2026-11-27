@@ -390,6 +390,61 @@ async def support_close(cb: CallbackQuery):
         await cb.answer("Ticket missing or already closed.", show_alert=True)
 
 
+class LiveChatAdminFSM(StatesGroup):
+    waiting_reply = State()
+
+
+@router.callback_query(F.data.startswith("livechat:reply:"))
+async def live_chat_admin_reply_start(cb: CallbackQuery, state: FSMContext):
+    if not await is_admin(cb.from_user.id):
+        await cb.answer("Admin only.", show_alert=True)
+        return
+    try:
+        user_id = int(cb.data.rsplit(":",1)[1])
+    except ValueError:
+        await cb.answer("Invalid user.", show_alert=True)
+        return
+    await state.set_state(LiveChatAdminFSM.waiting_reply)
+    await state.update_data(livechat_user_id=user_id)
+    await cb.answer()
+    await cb.message.answer(f"↩️ User <code>{user_id}</code> ko private Live Chat reply bhejein. Cancel: /cancel")
+
+
+@router.message(LiveChatAdminFSM.waiting_reply)
+async def live_chat_admin_reply_send(msg: Message, state: FSMContext, bot: Bot):
+    if not await is_admin(msg.from_user.id):
+        await state.clear()
+        return
+    if msg.text and msg.text.strip().split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
+        await state.clear()
+        await msg.answer("Live Chat reply cancelled.")
+        return
+    data = await state.get_data()
+    user_id = int(data["livechat_user_id"])
+    body = (msg.text or msg.caption or "").strip()
+    try:
+        if msg.photo: await bot.send_photo(user_id,msg.photo[-1].file_id,caption=body or None)
+        elif msg.document: await bot.send_document(user_id,msg.document.file_id,caption=body or None)
+        elif msg.video: await bot.send_video(user_id,msg.video.file_id,caption=body or None)
+        elif msg.voice: await bot.send_voice(user_id,msg.voice.file_id,caption=body or None)
+        elif body: await bot.send_message(user_id,"💬 <b>Admin</b>\n"+body)
+        else:
+            await msg.answer("Text, photo, document, video ya voice bhejein.")
+            return
+        await db().execute(
+            """INSERT INTO live_chat_messages(user_id,sender_id,sender_role,message_text,telegram_file_id,file_type)
+               VALUES($1,$2,'admin',$3,$4,$5)""",
+            user_id,msg.from_user.id,body,
+            msg.photo[-1].file_id if msg.photo else (msg.document.file_id if msg.document else (msg.video.file_id if msg.video else (msg.voice.file_id if msg.voice else None))),
+            "photo" if msg.photo else ("document" if msg.document else ("video" if msg.video else ("voice" if msg.voice else "text"))),
+        )
+        await msg.answer(f"✅ Reply user <code>{user_id}</code> ko bhej diya.")
+        await state.clear()
+    except Exception:
+        log.exception("Live chat admin reply failed")
+        await msg.answer("⚠️ User ko reply deliver nahi hua. User ne bot start kiya hai ya nahi check karein.")
+
+
 class AdminEditFSM(StatesGroup):
     edit_tier = State()
     edit_setting = State()
