@@ -166,11 +166,68 @@ async def support_faq_answer(cb: CallbackQuery):
     await cb.answer()
     await cb.message.answer(answer, reply_markup=kb.as_markup())
 
+class LiveChatFSM(StatesGroup):
+    waiting_message = State()
+
+
 @router.callback_query(F.data == "support:new")
 async def support_new(cb: CallbackQuery, state: FSMContext):
-    await state.set_state(SupportFSM.waiting_query)
+    await state.set_state(LiveChatFSM.waiting_message)
     await cb.answer()
-    await cb.message.answer("💬 <b>Live Chat</b>\nApni problem detail mein bhejein (max 500 characters). Aapka message support team ko turant forward hoga; reply isi chat thread mein milega. Cancel: /cancel")
+    await cb.message.answer(
+        "💬 <b>Private Live Chat with Admin</b>\n"
+        "• Yahan aap seedha authorized admin se baat kar sakte hain.\n"
+        "• Koi support ticket create nahi hoga.\n"
+        "• Aapka message sirf authorized admins ko forward hoga.\n"
+        "• Admin ka reply isi private bot chat mein milega.\n"
+        "Apna message bhejein. Band karne ke liye /cancel."
+    )
+
+
+@router.message(LiveChatFSM.waiting_message)
+async def live_chat_user_message(msg: Message, state: FSMContext, bot: Bot):
+    if msg.text and msg.text.strip().split(maxsplit=1)[0].split("@",1)[0] == "/cancel":
+        await state.clear()
+        await msg.answer("Live Chat band kar diya.")
+        return
+    body = (msg.text or msg.caption or "").strip()
+    if not body and not (msg.photo or msg.document or msg.video or msg.voice):
+        await msg.answer("Text, photo, document, video ya voice message bhejein.")
+        return
+    if msg.text and len(body) > 3000:
+        await msg.answer("Message 3000 characters se chhota rakhein.")
+        return
+    user = msg.from_user
+    await db().execute(
+        """INSERT INTO live_chat_messages(user_id,sender_id,sender_role,message_text,telegram_file_id,file_type)
+           VALUES($1,$1,'user',$2,$3,$4)""",
+        user.id, body or (msg.caption or ""), 
+        msg.photo[-1].file_id if msg.photo else (msg.document.file_id if msg.document else (msg.video.file_id if msg.video else (msg.voice.file_id if msg.voice else None))),
+        "photo" if msg.photo else ("document" if msg.document else ("video" if msg.video else ("voice" if msg.voice else "text"))),
+    )
+    sent = 0
+    for admin_id in await get_all_admin_ids():
+        try:
+            kb = InlineKeyboardBuilder()
+            kb.button(text="↩️ Reply in Live Chat", callback_data=f"livechat:reply:{user.id}")
+            label = f"👤 {user.full_name} (@{user.username or '—'})\n🆔 <code>{user.id}</code>\n\n{body[:2500]}"
+            if msg.photo:
+                await bot.send_photo(admin_id, msg.photo[-1].file_id, caption=label, reply_markup=kb.as_markup())
+            elif msg.document:
+                await bot.send_document(admin_id, msg.document.file_id, caption=label, reply_markup=kb.as_markup())
+            elif msg.video:
+                await bot.send_video(admin_id, msg.video.file_id, caption=label, reply_markup=kb.as_markup())
+            elif msg.voice:
+                await bot.send_voice(admin_id, msg.voice.file_id, caption=label, reply_markup=kb.as_markup())
+            else:
+                await bot.send_message(admin_id, "💬 <b>Live Chat message</b>\n"+label, reply_markup=kb.as_markup())
+            sent += 1
+        except Exception:
+            log.exception("Live chat delivery failed for admin %s", admin_id)
+    if sent:
+        await msg.answer("✅ Message authorized admin(s) ko bhej diya. Reply isi private chat mein milega.")
+    else:
+        await msg.answer("⚠️ Abhi admin ko message deliver nahi ho paya. Thodi der baad try karein.")
 
 
 @router.callback_query(F.data.startswith("support:open:"))
