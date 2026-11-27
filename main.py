@@ -11,6 +11,7 @@ from middlewares import ThrottlingMiddleware, ForceJoinMiddleware, BlacklistMidd
 from handlers_payment import router as payment_router
 from handlers_admin import router as admin_router
 from handlers_wallet import router as wallet_router
+from handlers_theme import router as theme_router
 from handlers_user_admin import router as user_admin_router
 from services_reconcile import reconcile_loop
 from webhook_server import app as web_app
@@ -69,6 +70,7 @@ async def main():
     dp.include_router(admin_router)
     dp.include_router(user_admin_router)
     dp.include_router(wallet_router)
+    dp.include_router(theme_router)
     dp.include_router(payment_router)
     dp.include_router(user_router)
     tasks=[
