@@ -23,7 +23,6 @@ VENUE = os.getenv("VENUE", "Venue to be announced")
 TICKET_PRICE_INR = env_int("TICKET_PRICE_INR", 499)
 TICKET_PRICE_STARS = env_int("TICKET_PRICE_STARS", 50)
 PORT = env_int("PORT", 8080)
-ADMIN_WEBAPP_URL = os.getenv("ADMIN_WEBAPP_URL", "").strip()
 
 def validate_config():
     if not BOT_TOKEN or ":" not in BOT_TOKEN:
