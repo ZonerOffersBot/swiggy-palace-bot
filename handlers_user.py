@@ -94,7 +94,8 @@ async def help_start(cb: CallbackQuery):
         cb.from_user.id,
     )
     kb = InlineKeyboardBuilder()
-    kb.button(text="➕ New Support Ticket", callback_data="support:new")
+    kb.button(text="📚 Frequently Asked Questions", callback_data="support:faq")
+    kb.button(text="💬 Live Chat with Support", callback_data="support:new")
     for row in rows:
         label = f"#{row['id']} — {row['status']} — {row['query'][:22]}"
         kb.button(text=label, callback_data=f"support:open:{row['id']}")
@@ -102,16 +103,58 @@ async def help_start(cb: CallbackQuery):
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer(
-        "🆘 <b>Support Centre</b>\nExisting ticket kholkar conversation continue karein, ya naya ticket banayein.",
+        "🆘 <b>Support Centre</b>\nFAQ se quick answers paayein ya Live Chat se admin ko message bhejein. Admin reply isi conversation mein milega.",
         reply_markup=kb.as_markup(),
     )
 
+
+
+
+@router.callback_query(F.data == "support:faq")
+async def support_faq(cb: CallbackQuery):
+    kb = InlineKeyboardBuilder()
+    questions = [
+        ("🛒 JSON Shop open nahi ho raha", "faq:shop"),
+        ("💰 Wallet balance / deposit", "faq:wallet"),
+        ("📦 Purchase / file delivery", "faq:delivery"),
+        ("💳 Payment pending", "faq:payment"),
+        ("🎟 Ticket / order status", "faq:ticket"),
+        ("💬 Talk to support", "support:new"),
+        ("⬅️ Support Centre", "menu:help"),
+    ]
+    for label, key in questions:
+        kb.button(text=label, callback_data=key)
+    kb.adjust(1)
+    await cb.answer()
+    await cb.message.answer("📚 <b>Help & FAQs</b>\nApni problem select karein. Agar solution na mile to Live Chat par message bhejein.", reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("faq:"))
+async def support_faq_answer(cb: CallbackQuery):
+    answers = {
+        "faq:shop": "🛒 <b>JSON Shop</b>\nShop unavailable ya empty dikhe to thodi der baad Refresh karke dekhein. Agar issue rahe, Live Chat par screenshot aur problem bhejein.",
+        "faq:wallet": "💰 <b>Wallet</b>\nWallet section mein balance aur transaction history dekhein. Deposit ke liye bot mein dikhaye gaye instructions follow karein aur payment reference sambhal kar rakhein.",
+        "faq:delivery": "📦 <b>Purchase & delivery</b>\nMy Purchases mein order status aur purchased files dekhein. Delivery na mile to order ID ke saath Live Chat par message bhejein.",
+        "faq:payment": "💳 <b>Payment pending</b>\nPayment status update hone mein thoda waqt lag sakta hai. Dobara payment karne se pehle transaction history check karein. Pending rahe to UTR/reference ke saath Live Chat karein.",
+        "faq:ticket": "🎟 <b>Ticket / order</b>\nMy Tickets mein ticket status dekhein. Ticket ya order mein dikkat ho to order details ke saath Live Chat karein.",
+    }
+    answer = answers.get(cb.data)
+    if not answer:
+        await cb.answer("FAQ nahi mila.", show_alert=True)
+        return
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💬 Live Chat with Support", callback_data="support:new")
+    kb.button(text="📚 All FAQs", callback_data="support:faq")
+    kb.button(text="⬅️ Support Centre", callback_data="menu:help")
+    kb.adjust(1)
+    await cb.answer()
+    await cb.message.answer(answer, reply_markup=kb.as_markup())
 
 @router.callback_query(F.data == "support:new")
 async def support_new(cb: CallbackQuery, state: FSMContext):
     await state.set_state(SupportFSM.waiting_query)
     await cb.answer()
-    await cb.message.answer("🆘 Apni query bhejein (max 500 chars). Admin isi ticket mein reply karega. Cancel: /cancel")
+    await cb.message.answer("💬 <b>Live Chat</b>\nApni problem detail mein bhejein (max 500 characters). Aapka message support team ko turant forward hoga; reply isi chat thread mein milega. Cancel: /cancel")
 
 
 @router.callback_query(F.data.startswith("support:open:"))
