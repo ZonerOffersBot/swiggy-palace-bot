@@ -178,6 +178,19 @@ CREATE TABLE IF NOT EXISTS support_messages (
 CREATE INDEX IF NOT EXISTS support_messages_ticket_idx ON support_messages(ticket_id,id);
 
 
+-- Private user-to-admin live chat; independent of support tickets.
+CREATE TABLE IF NOT EXISTS live_chat_messages (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+  sender_id BIGINT NOT NULL,
+  sender_role TEXT NOT NULL CHECK (sender_role IN ('user','admin')),
+  message_text TEXT NOT NULL DEFAULT '',
+  telegram_file_id TEXT,
+  file_type TEXT NOT NULL DEFAULT 'text',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS live_chat_user_idx ON live_chat_messages(user_id,id);
+
 -- Wallet, manual deposits and one-time digital inventory for the Swiggy Swagger bot.
 CREATE TABLE IF NOT EXISTS wallets (
   user_id BIGINT PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
