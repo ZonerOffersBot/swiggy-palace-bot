@@ -1,6 +1,5 @@
 import asyncio, logging, os
 import uvicorn
-from fastapi.responses import JSONResponse
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -17,17 +16,6 @@ from services_reconcile import reconcile_loop
 from webhook_server import app as web_app
 
 logging.basicConfig(level=logging.INFO,format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
-
-# Suspend every Mini App HTTP surface immediately after this branch is deployed.
-# Telegram inline JSON Shop callbacks in handlers_wallet.py remain available.
-@web_app.middleware("http")
-async def suspend_mini_app(request, call_next):
-    if request.url.path == "/admin-app" or request.url.path.startswith("/admin-app/"):
-        return JSONResponse(
-            status_code=410,
-            content={"ok": False, "detail": "Mini App is suspended. Use the Telegram admin panel."},
-        )
-    return await call_next(request)
 
 async def serve_web():
     server=uvicorn.Server(uvicorn.Config(web_app,host="0.0.0.0",port=PORT,log_level="info"))
