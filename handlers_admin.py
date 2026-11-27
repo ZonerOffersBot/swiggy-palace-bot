@@ -23,6 +23,7 @@ def admin_keyboard():
         ("📁 Ticket Files", "admin:files"),
         ("💰 Wallet Management", "admin:wallet_home"),
         ("🛒 Shop Inventory", "admin:wallet_inventory"),
+        ("🎨 Theme & Shop Images", "admin:theme_home"),
         ("🧾 Transaction History", "admin:wallet_history"),
         ("🎁 Promo Codes", "admin:promos"),
         ("📢 Force Join", "admin:force"),
