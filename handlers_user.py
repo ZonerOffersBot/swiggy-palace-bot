@@ -159,7 +159,7 @@ async def support_faq_answer(cb: CallbackQuery):
         await cb.answer("FAQ nahi mila.", show_alert=True)
         return
     kb = InlineKeyboardBuilder()
-    kb.button(text="💬 Live Chat with Support", callback_data="support:new")
+    kb.button(text="💬 Live Chat with Support", callback_data="support:new", style="success")
     kb.button(text="📚 All FAQs", callback_data="support:faq", style="primary")
     kb.button(text="⬅️ Support Centre", callback_data="menu:help", style="primary")
     kb.adjust(1)
@@ -259,7 +259,7 @@ async def support_open(cb: CallbackQuery, state: FSMContext):
     if ticket["status"] == "open":
         kb.button(text="✍️ Reply to Admin", callback_data=f"support:reply:{ticket_id}", style="success")
     kb.button(text="🔄 Refresh Conversation", callback_data=f"support:open:{ticket_id}", style="primary")
-    kb.button(text="⬅️ Support Centre", callback_data="menu:help")
+    kb.button(text="⬅️ Support Centre", callback_data="menu:help", style="primary")
     kb.adjust(1)
     await state.clear()
     await cb.answer()
@@ -359,7 +359,7 @@ async def support_submit(msg: Message, state: FSMContext, bot: Bot):
     await state.clear()
     user_kb = InlineKeyboardBuilder()
     user_kb.button(text="📂 Open Conversation", callback_data=f"support:open:{tid}", style="primary")
-    user_kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    user_kb.button(text="⬅️ Main Menu", callback_data="user:home", style="primary")
     user_kb.adjust(1)
     await msg.answer(
         f"✅ Support ticket #{tid} create ho gaya. Admin ka reply isi conversation mein milega.",
