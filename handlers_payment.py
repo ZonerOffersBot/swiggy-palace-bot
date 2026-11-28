@@ -39,8 +39,9 @@ async def choose_tier(cb: CallbackQuery):
         kb.button(
             text=f"{tier['label']} — {_tier_price_label(tier['price_inr'])} / ⭐{tier['price_stars']}",
             callback_data=f"tier:{tier['id']}",
+            style="success",
         )
-    kb.button(text="⬅️ Back", callback_data="user:home")
+    kb.button(text="⬅️ Back", callback_data="user:home", style="primary")
     kb.adjust(1)
     await cb.message.edit_text("🎫 <b>Ticket type chunein:</b>", reply_markup=kb.as_markup())
 
@@ -59,9 +60,9 @@ async def choose_payment(cb: CallbackQuery):
         await cb.answer("Yeh ticket type ab available nahi hai.", show_alert=True)
         return
     kb = InlineKeyboardBuilder()
-    kb.button(text="🎁 Apply promo code", callback_data=f"promo:enter:{tier_id}")
-    kb.button(text="Continue to payment", callback_data=f"pay:continue:{tier_id}")
-    kb.button(text="⬅️ Back", callback_data="menu:buy")
+    kb.button(text="🎁 Apply promo code", callback_data=f"promo:enter:{tier_id}", style="primary")
+    kb.button(text="Continue to payment", callback_data=f"pay:continue:{tier_id}", style="success")
+    kb.button(text="⬅️ Back", callback_data="menu:buy", style="primary")
     kb.adjust(1)
     await cb.message.edit_text(
         f"🎫 <b>{tier['label']}</b>\\nPrice: {_tier_price_label(tier['price_inr'])} / ⭐{tier['price_stars']}\\n\\n"
@@ -78,10 +79,10 @@ async def show_payment_methods(cb: CallbackQuery, tier_id: int):
         await cb.answer("Ticket type ab available nahi hai.", show_alert=True)
         return
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"⭐ Telegram Stars ({tier['price_stars']})", callback_data=f"pay:stars:{tier_id}")
-    kb.button(text="📱 UPI / PhonePe (temporarily unavailable)", callback_data=f"pay:phonepe:{tier_id}")
+    kb.button(text=f"⭐ Telegram Stars ({tier['price_stars']})", callback_data=f"pay:stars:{tier_id}", style="success")
+    kb.button(text="📱 UPI / PhonePe (temporarily unavailable)", callback_data=f"pay:phonepe:{tier_id}", style="danger")
     kb.button(text="🎁 Apply promo code", callback_data=f"promo:enter:{tier_id}")
-    kb.button(text="⬅️ Back", callback_data=f"tier:{tier_id}")
+    kb.button(text="⬅️ Back", callback_data=f"tier:{tier_id}", style="primary")
     kb.adjust(1)
     await cb.message.edit_text(f"🎫 <b>{tier['label']}</b>\\n\\nPayment method chunein:", reply_markup=kb.as_markup())
     await cb.answer()
