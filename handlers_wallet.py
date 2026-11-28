@@ -371,7 +371,7 @@ async def buy_categories(cb: CallbackQuery):
     for row in rows:
         count = await db().fetchval("SELECT COUNT(*) FROM digital_inventory WHERE category_id=$1 AND status='available'", row["id"])
         kb.button(text=row["label"] + " — " + money(row["price_paise"]) + " (" + str(count) + " available)", callback_data="files:category:" + str(row["id"]), style="success")
-    kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    kb.button(text="⬅️ Main Menu", callback_data="user:home", style="primary")
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer("🛒 <b>Available JSON files</b>\nCategory choose karein:", reply_markup=kb.as_markup())
