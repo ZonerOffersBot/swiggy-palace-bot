@@ -14,27 +14,31 @@ log = logging.getLogger(__name__)
 router=Router()
 
 def admin_keyboard():
-    """Two-column Swagger admin dashboard; all buttons retain existing handlers."""
+    """Two-column Swagger dashboard with Telegram Bot API button colors.
+
+    Only visual button styles change; existing callback_data and handlers stay intact.
+    """
     kb = InlineKeyboardBuilder()
     buttons = [
-        ("📊 Statistics", "admin:stats"),
-        ("👥 Users & Wallet Control", "admin:users"),
-        ("🎟 Ticket Types", "admin:tiers"),
-        ("📁 Ticket Files", "admin:files"),
-        ("💰 Wallet Management", "admin:wallet_home"),
-        ("🛒 Shop Inventory", "admin:wallet_inventory"),
-        ("🧾 Transaction History", "admin:wallet_history"),
-        ("🎁 Promo Codes", "admin:promos"),
-        ("📢 Force Join", "admin:force"),
-        ("🧭 User Menu", "admin:menu"),
-        ("👮 Admin Management", "admin:admins"),
-        ("🆘 Support Tickets", "admin:support"),
-        ("📣 Broadcast", "admin:broadcast"),
-        ("⚙️ Settings", "admin:settings"),
-        ("🔄 Refresh Panel", "admin:home"),
+        ("📊 Statistics", "admin:stats", "primary"),
+        ("👥 Users & Wallet Control", "admin:users", "primary"),
+        ("🎟 Ticket Types", "admin:tiers", "primary"),
+        ("📁 Ticket Files", "admin:files", "primary"),
+        ("💰 Wallet Management", "admin:wallet_home", "success"),
+        ("🛒 Shop Inventory", "admin:wallet_inventory", "success"),
+        ("🧾 Transaction History", "admin:wallet_history", "primary"),
+        ("🎁 Promo Codes", "admin:promos", "success"),
+        ("📢 Force Join", "admin:force", "primary"),
+        ("🧭 User Menu", "admin:menu", "primary"),
+        ("👮 Admin Management", "admin:admins", "primary"),
+        ("🆘 Support Tickets", "admin:support", "primary"),
+        ("📣 Broadcast", "admin:broadcast", "success"),
+        ("⚙️ Settings", "admin:settings", "primary"),
+        ("🔄 Refresh Panel", "admin:home", "danger"),
     ]
-    for label, data in buttons:
-        kb.button(text=label, callback_data=data)
+    for label, data, style in buttons:
+        # aiogram 3.15 forwards additional Bot API fields on Telegram objects.
+        kb.button(text=label, callback_data=data, style=style)
     # Keep the dashboard consistently arranged in two columns.
     kb.adjust(2)
     return kb.as_markup()
