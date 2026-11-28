@@ -81,7 +81,7 @@ async def show_payment_methods(cb: CallbackQuery, tier_id: int):
     kb = InlineKeyboardBuilder()
     kb.button(text=f"⭐ Telegram Stars ({tier['price_stars']})", callback_data=f"pay:stars:{tier_id}", style="success")
     kb.button(text="📱 UPI / PhonePe (temporarily unavailable)", callback_data=f"pay:phonepe:{tier_id}", style="danger")
-    kb.button(text="🎁 Apply promo code", callback_data=f"promo:enter:{tier_id}")
+    kb.button(text="🎁 Apply promo code", callback_data=f"promo:enter:{tier_id}", style="primary")
     kb.button(text="⬅️ Back", callback_data=f"tier:{tier_id}", style="primary")
     kb.adjust(1)
     await cb.message.edit_text(f"🎫 <b>{tier['label']}</b>\\n\\nPayment method chunein:", reply_markup=kb.as_markup())
