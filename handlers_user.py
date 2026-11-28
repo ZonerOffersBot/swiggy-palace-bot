@@ -26,7 +26,7 @@ async def build_home_kb():
     )
     kb = InlineKeyboardBuilder()
     for row in rows:
-        kb.button(text=row["label"], callback_data=f"menu:{row['key']}")
+        kb.button(text=row["label"], callback_data=f"menu:{row['key']}", style="success" if row["key"] in {"buy", "buyfiles", "wallet"} else "primary")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -98,12 +98,12 @@ async def help_start(cb: CallbackQuery):
         cb.from_user.id,
     )
     kb = InlineKeyboardBuilder()
-    kb.button(text="📚 Frequently Asked Questions", callback_data="support:faq")
-    kb.button(text="💬 Live Chat with Support", callback_data="support:new")
+    kb.button(text="📚 Frequently Asked Questions", callback_data="support:faq", style="primary")
+    kb.button(text="💬 Live Chat with Support", callback_data="support:new", style="success")
     for row in rows:
         label = f"#{row['id']} — {row['status']} — {row['query'][:22]}"
-        kb.button(text=label, callback_data=f"support:open:{row['id']}")
-    kb.button(text="⬅️ Main Menu", callback_data="user:home")
+        kb.button(text=label, callback_data=f"support:open:{row['id']}", style="primary")
+    kb.button(text="⬅️ Main Menu", callback_data="user:home", style="primary")
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer(
@@ -133,7 +133,7 @@ async def support_faq(cb: CallbackQuery):
         ("⬅️ Support Centre", "menu:help"),
     ]
     for label, key in questions:
-        kb.button(text=label, callback_data=key)
+        kb.button(text=label, callback_data=key, style="primary")
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer("📚 <b>Help & FAQs</b>\nNeeche apna sawal select karein. Har jawab ke baad zarurat ho to Live Chat par support team ko message bhej sakte hain.", reply_markup=kb.as_markup())
@@ -160,8 +160,8 @@ async def support_faq_answer(cb: CallbackQuery):
         return
     kb = InlineKeyboardBuilder()
     kb.button(text="💬 Live Chat with Support", callback_data="support:new")
-    kb.button(text="📚 All FAQs", callback_data="support:faq")
-    kb.button(text="⬅️ Support Centre", callback_data="menu:help")
+    kb.button(text="📚 All FAQs", callback_data="support:faq", style="primary")
+    kb.button(text="⬅️ Support Centre", callback_data="menu:help", style="primary")
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer(answer, reply_markup=kb.as_markup())
@@ -257,8 +257,8 @@ async def support_open(cb: CallbackQuery, state: FSMContext):
             text += f"{who}: {row['message_text'][:700]}\n\n"
     kb = InlineKeyboardBuilder()
     if ticket["status"] == "open":
-        kb.button(text="✍️ Reply to Admin", callback_data=f"support:reply:{ticket_id}")
-    kb.button(text="🔄 Refresh Conversation", callback_data=f"support:open:{ticket_id}")
+        kb.button(text="✍️ Reply to Admin", callback_data=f"support:reply:{ticket_id}", style="success")
+    kb.button(text="🔄 Refresh Conversation", callback_data=f"support:open:{ticket_id}", style="primary")
     kb.button(text="⬅️ Support Centre", callback_data="menu:help")
     kb.adjust(1)
     await state.clear()
@@ -333,7 +333,7 @@ async def support_user_message(msg: Message, state: FSMContext, bot: Bot):
         except Exception:
             log.exception("Could not notify admin %s about support message %s", admin_id, ticket_id)
     user_kb = InlineKeyboardBuilder()
-    user_kb.button(text="📂 Open Conversation", callback_data=f"support:open:{ticket_id}")
+    user_kb.button(text="📂 Open Conversation", callback_data=f"support:open:{ticket_id}", style="primary")
     await msg.answer(
         f"✅ Message Support #{ticket_id} mein bhej diya. Admin ka reply isi conversation mein milega.",
         reply_markup=user_kb.as_markup(),
@@ -358,7 +358,7 @@ async def support_submit(msg: Message, state: FSMContext, bot: Bot):
     )
     await state.clear()
     user_kb = InlineKeyboardBuilder()
-    user_kb.button(text="📂 Open Conversation", callback_data=f"support:open:{tid}")
+    user_kb.button(text="📂 Open Conversation", callback_data=f"support:open:{tid}", style="primary")
     user_kb.button(text="⬅️ Main Menu", callback_data="user:home")
     user_kb.adjust(1)
     await msg.answer(
