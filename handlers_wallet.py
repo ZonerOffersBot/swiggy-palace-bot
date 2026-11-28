@@ -93,9 +93,9 @@ async def wallet_menu(cb: CallbackQuery):
     await user_wallet_id(cb.from_user)
     bal = await db().fetchval("SELECT balance_paise FROM wallets WHERE user_id=$1", cb.from_user.id) or 0
     kb = InlineKeyboardBuilder()
-    kb.button(text="➕ Add Balance", callback_data="wallet:deposit")
-    kb.button(text="🧾 My Transactions", callback_data="wallet:history")
-    kb.button(text="⬅️ Main Menu", callback_data="user:home")
+    kb.button(text="➕ Add Balance", callback_data="wallet:deposit", style="success")
+    kb.button(text="🧾 My Transactions", callback_data="wallet:history", style="primary")
+    kb.button(text="⬅️ Main Menu", callback_data="user:home", style="primary")
     kb.adjust(1)
     await cb.answer()
     await cb.message.answer("💰 <b>My Wallet</b>\nAvailable balance: <b>" + money(bal) + "</b>\nMinimum deposit: ₹25", reply_markup=kb.as_markup())
@@ -370,7 +370,7 @@ async def buy_categories(cb: CallbackQuery):
     kb = InlineKeyboardBuilder()
     for row in rows:
         count = await db().fetchval("SELECT COUNT(*) FROM digital_inventory WHERE category_id=$1 AND status='available'", row["id"])
-        kb.button(text=row["label"] + " — " + money(row["price_paise"]) + " (" + str(count) + " available)", callback_data="files:category:" + str(row["id"]))
+        kb.button(text=row["label"] + " — " + money(row["price_paise"]) + " (" + str(count) + " available)", callback_data="files:category:" + str(row["id"]), style="success")
     kb.button(text="⬅️ Main Menu", callback_data="user:home")
     kb.adjust(1)
     await cb.answer()
@@ -394,9 +394,9 @@ async def choose_inventory_category(cb: CallbackQuery, state: FSMContext):
     await state.update_data(category_id=cat_id)
     kb = InlineKeyboardBuilder()
     for qty in range(1, min(int(count), 5) + 1):
-        kb.button(text=f"{qty} file" if qty == 1 else f"{qty} files", callback_data=f"files:qty:{qty}")
-    kb.button(text="🔢 Custom quantity", callback_data="files:qty:custom")
-    kb.button(text="⬅️ Categories", callback_data="menu:buyfiles")
+        kb.button(text=f"{qty} file" if qty == 1 else f"{qty} files", callback_data=f"files:qty:{qty}", style="success")
+    kb.button(text="🔢 Custom quantity", callback_data="files:qty:custom", style="primary")
+    kb.button(text="⬅️ Categories", callback_data="menu:buyfiles", style="primary")
     kb.adjust(2, 2, 1, 1)
     await cb.message.answer(
         f"🛒 <b>{cat['label']}</b>\nPrice per file: {money(cat['price_paise'])}\nAvailable: {count}\n\nQuantity select karein:",
@@ -537,7 +537,7 @@ async def user_purchases(cb: CallbackQuery):
     kb = InlineKeyboardBuilder()
     for r in rows:
         text += "\n• " + r["label"] + " × " + str(r["quantity"]) + " — " + money(r["total_paise"]) + "\n  " + str(r["status"]) + " | " + str(r["created_at"]) + "\n  <code>" + str(r["purchase_id"]) + "</code>\n"
-        kb.button(text=f"📂 Open files — {str(r['purchase_id'])[:8]}", callback_data=f"purchase:open:{r['purchase_id']}")
+        kb.button(text=f"📂 Open files — {str(r['purchase_id'])[:8]}", callback_data=f"purchase:open:{r['purchase_id']}", style="success")
     kb.button(text="⬅️ Main Menu", callback_data="user:home")
     kb.adjust(1)
     await cb.message.answer(text[:3900], reply_markup=kb.as_markup())
@@ -971,7 +971,7 @@ async def ticket_files_shop(cb: CallbackQuery):
     text = "📁 <b>Ticket Files Shop</b>\nHar item purchase karne par wahi uploaded file/text milega.\n"
     for row in rows:
         text += f"\n• #{row['id']} — {row['title'][:45]} ({row['file_type']}) — {money(row['price_paise'])}"
-        kb.button(text=f"🛒 Buy #{row['id']} — {money(row['price_paise'])}", callback_data=f"ticketfile:buy:{row['id']}")
+        kb.button(text=f"🛒 Buy #{row['id']} — {money(row['price_paise'])}", callback_data=f"ticketfile:buy:{row['id']}", style="success")
     kb.button(text="⬅️ Main Menu", callback_data="user:home")
     kb.adjust(1)
     await cb.message.answer(text[:3900], reply_markup=kb.as_markup())
@@ -1091,7 +1091,7 @@ async def my_ticket_file_purchases(cb: CallbackQuery):
     text = "📦 <b>My Ticket Files</b>\n"
     for row in rows:
         text += f"\n• {row['title'][:40]} — {money(row['price_paise'])} — {row['status']}\n"
-        kb.button(text=f"📤 Resend #{row['file_id']}", callback_data=f"ticketfile:resend:{row['purchase_id']}")
+        kb.button(text=f"📤 Resend #{row['file_id']}", callback_data=f"ticketfile:resend:{row['purchase_id']}", style="success")
     kb.button(text="⬅️ Main Menu", callback_data="user:home")
     kb.adjust(1)
     await cb.message.answer(text[:3900], reply_markup=kb.as_markup())
